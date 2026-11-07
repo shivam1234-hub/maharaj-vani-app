@@ -1,5 +1,12 @@
 # Maharaj Vani
 
+<p><a href="https://github.com/shivam1234-hub/maharaj-vani-app/releases/latest/download/MaharajVani.apk"><b>⬇️ Download APK</b></a> · <a href="https://github.com/shivam1234-hub/maharaj-vani-app/releases/latest">all versions</a><br><sub>Android: open the downloaded file and tap Install. You may need to allow installs from your browser first.</sub></p>
+
+## Screenshots
+
+<table><tr><td align="center"><img src="docs/screenshots/mv-home.jpg" width="200"><br><sub>Home</sub></td><td align="center"><img src="docs/screenshots/mv-search.jpg" width="200"><br><sub>Search</sub></td><td align="center"><img src="docs/screenshots/mv-video.jpg" width="200"><br><sub>Videos</sub></td></tr></table>
+
+
 Offline-first lecture app for **His Holiness Radhanath Swami**, **His Holiness Lokanath Swami**,
 **His Holiness Bhakti Ashraya Vaishnava Swami** and **His Holiness Gour Govinda Swami**,
 built with the same architecture as the Prabhupada Vani app (Expo Router, react-native-track-player,
