@@ -1,0 +1,28 @@
+node_modules/
+.expo/
+dist/
+web-build/
+*.log
+.DS_Store
+ios/
+# android/ is committed prebuild output — it carries the hand-written
+# arm64-only ABI splits config, which `expo prebuild` does not generate.
+android/.gradle/
+android/build/
+android/app/build/
+android/local.properties
+
+# Native build output and machine-local files
+android/.gradle/
+android/build/
+android/app/build/
+android/.cxx/
+android/app/.cxx/
+android/.kotlin/
+android/local.properties
+*.apk
+*.aab
+release.keystore
+*.jks
+.idea/
+.DS_Store
