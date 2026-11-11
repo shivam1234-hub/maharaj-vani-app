@@ -229,6 +229,11 @@ function Sidebar({ collapsed, pathname }: { collapsed: boolean; pathname: string
             collapsed={collapsed}
           />
           <NavRow
+            item={{ href: '/songs', label: 'Prayers & Songs', icon: 'musical-notes-outline', iconOn: 'musical-notes', match: (p) => p.startsWith('/songs') }}
+            on={pathname.startsWith('/songs')}
+            collapsed={collapsed}
+          />
+          <NavRow
             item={{ href: '/browse?favourites=1', label: 'Favourites', icon: 'heart-outline', iconOn: 'heart', match: () => false }}
             on={false}
             collapsed={collapsed}
@@ -432,7 +437,7 @@ function SidebarFooter({ collapsed }: { collapsed: boolean }) {
         })}
       </View>
       <Text style={{ color: t.textFaint, fontSize: 10.5, lineHeight: 14 }}>
-        Version {desktop()?.version ?? '1.9.2'} · Audio courtesy of audio.iskcondesiretree.com
+        Version {desktop()?.version ?? '1.10.0'} · Audio courtesy of audio.iskcondesiretree.com
       </Text>
     </View>
   );
@@ -451,6 +456,7 @@ const TITLES: Array<[RegExp, string]> = [
   [/^\/history/, 'History'],
   [/^\/lecture\//, 'Lecture'],
   [/^\/global-search/, 'Search everything'],
+  [/^\/songs/, 'Prayers & Songs'],
 ];
 
 function TopBar({

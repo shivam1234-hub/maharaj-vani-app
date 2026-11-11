@@ -67,6 +67,8 @@ function Routed() {
           <Stack.Screen name="shastra/chapter" />
           <Stack.Screen name="shastra/verse" />
           <Stack.Screen name="video/[id]" />
+          <Stack.Screen name="songs/index" />
+          <Stack.Screen name="songs/[id]" />
         </Stack>
       </Shell>
     </MenuHost>

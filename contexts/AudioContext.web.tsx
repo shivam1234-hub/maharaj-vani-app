@@ -122,6 +122,8 @@ export function AudioProvider({ children }: { children: React.ReactNode }) {
   const pendingRef = useRef<{ rec: Recording; startMs: number } | null>(null);
 
   const el = elRef.current;
+  // Exposed for the development screenshot harness (desktop/scripts/shots.js) to read playback state.
+  if (typeof window !== 'undefined') (window as any).__vvAudio = el;
 
   useEffect(() => {
     if (!el) return;

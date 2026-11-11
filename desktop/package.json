@@ -1,7 +1,7 @@
 {
   "name": "vaishnava-vani-desktop",
   "productName": "Vaishnava Vani",
-  "version": "1.9.2",
+  "version": "1.10.0",
   "description": "Vaishnava Vani — lectures of Maharajas and Prabhujis, verse by verse — Windows desktop build",
   "main": "main.js",
   "private": true,

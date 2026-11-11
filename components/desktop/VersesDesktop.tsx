@@ -20,16 +20,17 @@ import { useHistory } from '../../contexts/HistoryContext';
 import { useSettings } from '../../contexts/SettingsContext';
 import { GUEST_ACCENT, MAHARAJAS, MAHARAJ_ORDER, honoured, maharajOf } from '../../data/maharajas';
 import {
-  TIER_LABEL, adjacentChapter, adjacentVerse, chapterLabel, getBooks, getChapter, getPart, vedabaseUrl,
+  TIER_LABEL, adjacentChapter, adjacentVerse, chapterLabel, getBooks, getChapter, getPart, isProse, isSingleChapter, vedabaseUrl,
   verseLabel, verseTranslation, type BookInfo, type PartInfo, type SpeakerTier, type VerseAudio, type VerseVideo,
 } from '../../data/verseIndex';
 import {
   chapterTalks, lecturesForVerse, recordingOf, rememberPlace, sequenceForChapter, useLastPlace, useVerseSpeaker, verseCounts,
   type VerseSpeaker,
 } from '../../hooks/useVerses';
-import { search } from '../../utils/youtube';
+import { useLiveVerseVideos, verseVideoResult } from '../../hooks/useLiveVerseVideos';
 import { entryEnd, entryStart, parseVerseRefs, type BookKey } from '../../utils/verseRef';
-import { BOOK_META } from '../../utils/shastraNav';
+import { BOOK_META, SONGS_COLOR } from '../../utils/shastraNav';
+import { SONGS } from '../../utils/songs';
 import { formatDuration, formatRecordingDate, type VideoResult } from '../../data/types';
 import { openExternal } from '../../utils/desktopBridge';
 
@@ -39,7 +40,7 @@ type Sel = { book: BookKey; part: string; n: number; entry?: string } | null;
 
 function parseSel(p: VersePlaceParams): Sel {
   const book = String(p.book ?? '').toUpperCase() as BookKey;
-  if (!['BG', 'SB', 'CC'].includes(book)) return null;
+  if (!(book in BOOK_META)) return null;
   const part = String(p.part ?? '');
   const n = Number(p.n);
   if (!n || !getChapter(book, part, n)) return null;
@@ -48,6 +49,16 @@ function parseSel(p: VersePlaceParams): Sel {
 
 function selHref(s: { book: BookKey; part: string; n: number; entry?: string }) {
   return `/verses?book=${s.book}&part=${encodeURIComponent(s.part)}&n=${s.n}${s.entry ? `&entry=${encodeURIComponent(s.entry)}` : ''}`;
+}
+
+/** "Invocation" for the Isopanisad's verse 0. */
+function entryName(entry: string) {
+  return entry === '0' ? 'Invocation' : entry;
+}
+
+/** A chapter's label in the tree and headers ("i" for NOD's Introduction). */
+function chapterNum(n: number) {
+  return n === 0 ? 'i' : String(n);
 }
 
 function goSel(s: { book: BookKey; part: string; n: number; entry?: string }) {
@@ -86,7 +97,9 @@ export default function VersesDesktop({ params }: { params: VersePlaceParams }) 
       </View>
       {sel ? (
         <View style={{ width: rightW }}>
-          {sel.entry ? <VersePane sel={{ ...sel, entry: sel.entry }} /> : <ChapterTalksPane sel={sel} />}
+          {isProse(sel.book)
+            ? <ProseVideosPane sel={sel} />
+            : sel.entry ? <VersePane sel={{ ...sel, entry: sel.entry }} /> : <ChapterTalksPane sel={sel} />}
         </View>
       ) : null}
     </View>
@@ -145,14 +158,14 @@ function Tree({ width, sel }: { width: number; sel: Sel }) {
             value={jump}
             onChangeText={(v) => { setJump(v); if (jumpErr) setJumpErr(false); }}
             onSubmitEditing={go}
-            placeholder="Go to verse — SB 1.2.6"
+            placeholder="Go to verse — Bs 5.29"
             placeholderTextColor={t.textFaint}
             style={{ flex: 1, minWidth: 0, width: 0, color: t.text, fontSize: 13, outlineStyle: 'none', height: 34 } as any}
             autoCorrect={false}
           />
           <IconButton icon="arrow-forward" label="Go" size={26} iconSize={14} onPress={go} />
         </View>
-        {jumpErr ? <Text style={{ color: t.danger, fontSize: 11.5 }}>Not a verse I can find — try “BG 2.47”, “CC Madhya 20.108”.</Text> : null}
+        {jumpErr ? <Text style={{ color: t.danger, fontSize: 11.5 }}>Not a verse I can find — try “SB 1.2.6”, “Iso 7” or “NOD 12”.</Text> : null}
         <View>
           <Text style={{ color: t.textFaint, fontSize: 10.5, fontWeight: '800', letterSpacing: 1, textTransform: 'uppercase', marginBottom: 6 }}>Put first</Text>
           <Select label="Whose lectures come first" value={speaker} options={speakerOptions} onChange={setSpeaker} width="100%" />
@@ -162,20 +175,23 @@ function Tree({ width, sel }: { width: number; sel: Sel }) {
         {books.map((b) => {
           const meta = BOOK_META[b.key];
           const bOpen = open.has(b.key);
+          const single = isSingleChapter(b.key);
+          const only = b.parts[0].chapters[0];
+          const singleOn = single && sel?.book === b.key;
           return (
             <View key={b.key}>
               <Hover
-                onPress={() => toggle(b.key)}
+                onPress={() => (single ? goSel({ book: b.key, part: b.parts[0].key, n: only.n }) : toggle(b.key))}
                 accessibilityLabel={b.name}
-                style={({ hovered }) => ({ flexDirection: 'row', alignItems: 'center', gap: 9, height: 38, paddingHorizontal: 8, borderRadius: 8, backgroundColor: hovered ? t.hover : 'transparent' })}
+                style={({ hovered }) => ({ flexDirection: 'row', alignItems: 'center', gap: 9, height: 38, paddingHorizontal: 8, borderRadius: 8, backgroundColor: singleOn ? a(meta.color, 0.18) : hovered ? t.hover : 'transparent' })}
               >
-                <Ionicons name={bOpen ? 'chevron-down' : 'chevron-forward'} size={13} color={t.textDim} />
+                <Ionicons name={single ? 'remove' : bOpen ? 'chevron-down' : 'chevron-forward'} size={13} color={single ? 'transparent' : t.textDim} />
                 <View style={{ width: 24, height: 24, borderRadius: 7, backgroundColor: a(meta.color, 0.18), alignItems: 'center', justifyContent: 'center' }}>
                   <Ionicons name={meta.icon as any} size={13} color={t.ink(meta.color)} />
                 </View>
                 <Text style={{ flex: 1, color: t.text, fontSize: 13.5, fontWeight: '800' }} numberOfLines={1}>{meta.short}</Text>
               </Hover>
-              {bOpen && (b.parts.length === 1
+              {!single && bOpen && (b.parts.length === 1
                 ? <ChapterNodes book={b.key} part={b.parts[0]} sel={sel} depth={1} />
                 : b.parts.map((p) => {
                   const k = `${b.key}:${p.key}`;
@@ -198,6 +214,18 @@ function Tree({ width, sel }: { width: number; sel: Sel }) {
             </View>
           );
         })}
+        <Hover
+          onPress={() => router.push('/songs' as any)}
+          accessibilityLabel="Prayers & Songs"
+          style={({ hovered }) => ({ flexDirection: 'row', alignItems: 'center', gap: 9, height: 38, paddingHorizontal: 8, marginTop: 6, borderRadius: 8, backgroundColor: hovered ? t.hover : 'transparent' })}
+        >
+          <Ionicons name="remove" size={13} color="transparent" />
+          <View style={{ width: 24, height: 24, borderRadius: 7, backgroundColor: a(SONGS_COLOR, 0.18), alignItems: 'center', justifyContent: 'center' }}>
+            <Ionicons name="musical-notes" size={13} color={t.ink(SONGS_COLOR)} />
+          </View>
+          <Text style={{ flex: 1, color: t.text, fontSize: 13.5, fontWeight: '800' }} numberOfLines={1}>Prayers & Songs</Text>
+          <Ionicons name="arrow-forward" size={13} color={t.textDim} />
+        </Hover>
         <Text style={{ color: t.textFaint, fontSize: 10.5, lineHeight: 14, margin: 10, marginTop: 18 }}>
           Verse text: Bhaktivedanta Book Trust (vedabase.io). Audio: audio.iskcondesiretree.com.
         </Text>
@@ -210,19 +238,31 @@ function ChapterNodes({ book, part, sel, depth }: { book: BookKey; part: PartInf
   const t = useTheme();
   const meta = BOOK_META[book];
   // Coverage loads this part's index shard once — only for parts opened.
-  const coverage = useMemo(
-    () => part.chapters.map((c) => {
-      const counts = verseCounts(book, part.key, c.n, c.verses);
-      return c.verses.length ? counts.filter((x) => x.audio + x.video > 0).length / c.verses.length : 0;
-    }),
-    [book, part],
-  );
+  const prose = isProse(book);
+  const [speaker] = useVerseSpeaker();
+  // A prose chapter (Nectar of Devotion) counts its lectures, relative to the
+  // best-covered chapter; a verse chapter, the share of verses with one.
+  const { coverage, counts } = useMemo(() => {
+    if (prose) {
+      const n = part.chapters.map((c) => {
+        const tk = chapterTalks(book, part.key, c.n, speaker);
+        return tk.audio.length + tk.video.length;
+      });
+      const most = Math.max(1, ...n);
+      return { coverage: n.map((x) => x / most), counts: n };
+    }
+    const cov = part.chapters.map((c) => {
+      const cs = verseCounts(book, part.key, c.n, c.verses);
+      return c.verses.length ? cs.filter((x) => x.audio + x.video > 0).length / c.verses.length : 0;
+    });
+    return { coverage: cov, counts: null as number[] | null };
+  }, [book, part, prose, speaker]);
   return (
     <View>
       {part.chapters.map((c, i) => {
         const on = sel?.book === book && sel.part === part.key && sel.n === c.n;
         return (
-          <Tip key={c.n} label={`${chapterLabel(book, part.key, c.n)} · ${c.title} — ${c.verses.length} verses, lectures on ${Math.round(coverage[i] * 100)}%`}>
+          <Tip key={c.n} label={`${c.n === 0 ? meta.short : chapterLabel(book, part.key, c.n)} · ${c.title} — ${counts ? `${counts[i]} lecture${counts[i] === 1 ? '' : 's'}` : `${c.verses.length} verses, lectures on ${Math.round(coverage[i] * 100)}%`}`}>
             <Hover
               onPress={() => goSel({ book, part: part.key, n: c.n })}
               accessibilityLabel={c.title}
@@ -232,7 +272,7 @@ function ChapterNodes({ book, part, sel, depth }: { book: BookKey; part: PartInf
                 backgroundColor: on ? a(meta.color, 0.18) : hovered ? t.hover : 'transparent',
               } as any)}
             >
-              <Text style={{ width: 22, color: on ? t.ink(meta.color) : t.textFaint, fontSize: 11.5, fontWeight: '800', textAlign: 'right', fontVariant: ['tabular-nums'] }}>{c.n}</Text>
+              <Text style={{ width: 22, color: on ? t.ink(meta.color) : t.textFaint, fontSize: 11.5, fontWeight: '800', textAlign: 'right', fontVariant: ['tabular-nums'] }}>{chapterNum(c.n)}</Text>
               <Text style={{ flex: 1, color: on ? t.text : t.textSub, fontSize: 12.5, fontWeight: on ? '700' : '500' }} numberOfLines={1}>{c.title}</Text>
               <View style={{ width: 22, height: 3, borderRadius: 2, backgroundColor: t.border, overflow: 'hidden' }}>
                 <View style={{ width: `${coverage[i] * 100}%`, height: 3, backgroundColor: meta.color }} />
@@ -258,9 +298,10 @@ function Overview() {
         <Kicker text="Shastra" />
         <Text style={{ color: t.text, fontSize: 30, fontWeight: '800', marginTop: 4 }}>Verse by verse</Text>
         <Text style={{ color: t.textSub, fontSize: 14.5, lineHeight: 22, marginTop: 8, maxWidth: 720 }}>
-          Every shloka of the Bhagavad-gita, Srimad-Bhagavatam and Caitanya-caritamrta in order, with the lectures given on it —
-          your Maharajas and Prabhujis first, then other Maharajas wherever they have not spoken. Choose a chapter on the left,
-          or type a verse like “SB 1.2.6”.
+          Every shloka of the Bhagavad-gita, Srimad-Bhagavatam, Caitanya-caritamrta, The Nectar of Instruction, Brahma-samhita
+          and Sri Isopanisad in order — and The Nectar of Devotion chapter by chapter — with the lectures given on it: your
+          Maharajas and Prabhujis first, then other Maharajas wherever they have not spoken. Choose a book on the left, or type
+          a verse like “SB 1.2.6”, “Bs 5.29” or “NOD 12”.
         </Text>
         {last && lastCh ? (
           <Hover
@@ -286,6 +327,27 @@ function Overview() {
         <View style={{ flexDirection: 'row', gap: 16, marginTop: 26, flexWrap: 'wrap' }}>
           {books.map((b) => <BookCard key={b.key} book={b} />)}
         </View>
+        <Text style={{ color: t.text, fontSize: 17, fontWeight: '800', marginTop: 30 }}>Prayers & Songs</Text>
+        <Hover
+          onPress={() => router.push('/songs' as any)}
+          accessibilityLabel="Prayers & Vaisnava Songs"
+          style={({ hovered }) => ({
+            flexDirection: 'row', alignItems: 'center', gap: 16, marginTop: 12, padding: 20, borderRadius: 18, borderWidth: 1,
+            borderColor: a(SONGS_COLOR, hovered ? 0.6 : 0.35), backgroundColor: a(SONGS_COLOR, hovered ? 0.12 : 0.07),
+          } as any)}
+        >
+          <View style={{ width: 48, height: 48, borderRadius: 14, backgroundColor: a(SONGS_COLOR, 0.2), alignItems: 'center', justifyContent: 'center' }}>
+            <Ionicons name="musical-notes" size={24} color={t.ink(SONGS_COLOR)} />
+          </View>
+          <View style={{ flex: 1 }}>
+            <Text style={{ color: t.text, fontSize: 16, fontWeight: '800' }}>Prayers & Vaisnava Songs</Text>
+            <Text style={{ color: t.textSub, fontSize: 13, marginTop: 4 }}>
+              Explanations of Gurvastakam, Siksastakam, Mangalacarana, the songs of Bhaktivinoda and Narottama dasa Thakura, Kunti’s prayers and more
+            </Text>
+            <Text style={{ color: t.ink(SONGS_COLOR), fontSize: 12.5, fontWeight: '700', marginTop: 8 }}>{SONGS.length} prayers & songs</Text>
+          </View>
+          <Ionicons name="arrow-forward" size={18} color={t.textDim} />
+        </Hover>
       </View>
     </ScrollView>
   );
@@ -297,12 +359,18 @@ function BookCard({ book }: { book: BookInfo }) {
   const chapters = book.parts.reduce((s, p) => s + p.chapters.length, 0);
   const verses = book.parts.reduce((s, p) => s + p.chapters.reduce((x, c) => x + c.verses.length, 0), 0);
   const first = book.parts[0];
+  const single = isSingleChapter(book.key);
+  const stats = isProse(book.key)
+    ? `${chapters} chapters`
+    : single
+      ? `${verses.toLocaleString()} verses`
+      : `${book.key === 'SB' ? `${book.parts.length} cantos · ` : book.key === 'CC' ? `${book.parts.length} lilas · ` : ''}${chapters} chapters · ${verses.toLocaleString()} verses`;
   return (
     <Hover
       onPress={() => goSel({ book: book.key, part: first.key, n: first.chapters[0].n })}
       accessibilityLabel={book.name}
       style={({ hovered }) => ({
-        flexGrow: 1, flexBasis: 280, padding: 22, borderRadius: 18, borderWidth: 1,
+        flexGrow: 1, flexBasis: 260, maxWidth: 460, padding: 22, borderRadius: 18, borderWidth: 1,
         borderColor: a(meta.color, hovered ? 0.6 : 0.35), backgroundColor: a(meta.color, hovered ? 0.12 : 0.07),
         transitionDuration: '120ms',
       } as any)}
@@ -312,10 +380,7 @@ function BookCard({ book }: { book: BookInfo }) {
       </View>
       <Text style={{ color: t.text, fontSize: 17, fontWeight: '800', marginTop: 14 }}>{book.name}</Text>
       <Text style={{ color: t.textSub, fontSize: 13, marginTop: 4 }}>{meta.blurb}</Text>
-      <Text style={{ color: t.ink(meta.color), fontSize: 12.5, fontWeight: '700', marginTop: 12 }}>
-        {book.key === 'SB' ? `${book.parts.length} cantos · ` : book.key === 'CC' ? `${book.parts.length} lilas · ` : ''}
-        {chapters} chapters · {verses.toLocaleString()} verses
-      </Text>
+      <Text style={{ color: t.ink(meta.color), fontSize: 12.5, fontWeight: '700', marginTop: 12 }}>{stats}</Text>
     </Hover>
   );
 }
@@ -339,18 +404,37 @@ function ChapterPane({ sel }: { sel: NonNullable<Sel> }) {
   const partName = getPart(book, part)?.name;
   const listRef = useRef<FlatList>(null);
   const fs = (x: number) => Math.round(x * readerFontScale);
+  const prose = isProse(book);
+  const single = isSingleChapter(book);
+  const talks = useMemo(() => chapterTalks(book, part, n, speaker), [book, part, n, speaker]);
+  const [showAllTalks, setShowAllTalks] = useState(false);
+  useEffect(() => setShowAllTalks(false), [book, part, n]);
 
+  // A prose chapter (Nectar of Devotion) plays its lectures in rank order; a verse chapter, verse by verse.
   const playSequence = (from = 0) => {
-    const items = sequence.slice(from)
-      .map((s) => recordingOf(s.lecture))
+    const lectures = prose ? talks.audio.slice(from) : sequence.slice(from).map((s) => s.lecture);
+    const items = lectures
+      .map((l) => recordingOf(l))
       .filter((r): r is NonNullable<typeof r> => Boolean(r))
       .map((recording) => ({ recording, localUri: getLocalUri(recording.id) }));
     if (!items.length) {
-      Alert.alert('No audio lectures', 'No verse of this chapter has an archive lecture yet — try the videos on each verse.');
+      Alert.alert(
+        'No audio lectures',
+        prose
+          ? 'This chapter has no archive lecture yet — try the videos alongside.'
+          : 'No verse of this chapter has an archive lecture yet — try the videos on each verse.',
+      );
       return;
     }
     audio.playQueue(items);
   };
+  const kicker = prose
+    ? n === 0 ? meta.short : `${meta.short} · Chapter ${n}`
+    : single
+      ? book === 'BS' ? `${meta.short} · Chapter ${n}` : meta.short
+      : [partName && book !== 'BG' ? partName : meta.short, `Chapter ${n}`].join(' · ');
+  const talkCount = talks.audio.length + talks.video.length;
+  const whose = speaker === 'all' ? 'your Maharajas first' : `${honoured(MAHARAJAS[speaker].short)} first`;
 
   // Bring the selected verse into view when it changes from elsewhere (jump box, prev/next).
   useEffect(() => {
@@ -365,29 +449,56 @@ function ChapterPane({ sel }: { sel: NonNullable<Sel> }) {
   const header = (
     <View style={{ paddingBottom: 10 }}>
       <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
-        <Kicker text={[partName && book !== 'BG' ? partName : meta.short, `Chapter ${n}`].join(' · ')} color={meta.color} />
+        <Kicker text={kicker} color={meta.color} />
         <View style={{ flex: 1 }} />
+        {!single ? <>
         <IconButton icon="chevron-back" label={prev ? `Previous chapter (${chapterLabel(book, prev.part, prev.n)})` : 'First chapter'} disabled={!prev} onPress={() => prev && goSel({ book, part: prev.part, n: prev.n })} />
         <IconButton icon="chevron-forward" label={next ? `Next chapter (${chapterLabel(book, next.part, next.n)})` : 'Last chapter'} disabled={!next} onPress={() => next && goSel({ book, part: next.part, n: next.n })} />
+        </> : null}
       </View>
       <Text style={{ color: t.text, fontSize: 26, fontWeight: '800', marginTop: 4 }}>{chapter.title}</Text>
       <Text style={{ color: t.textDim, fontSize: 13, marginTop: 5 }}>
-        {chapterLabel(book, part, n)} · {chapter.verses.length} verses · lectures on {covered}
+        {prose
+          ? `${talkCount} lecture${talkCount === 1 ? '' : 's'} on this chapter`
+          : `${single ? meta.short : chapterLabel(book, part, n)} · ${chapter.verses.length} verses · lectures on ${covered}`}
       </Text>
       <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12, marginTop: 16, flexWrap: 'wrap' }}>
-        <Button variant="primary" color={meta.color} icon="play" label="Play chapter in sequence" onPress={() => playSequence(0)} />
+        <Button
+          variant="primary"
+          color={meta.color}
+          icon="play"
+          label={prose ? 'Play chapter lectures' : single ? 'Play all verses in sequence' : 'Play chapter in sequence'}
+          onPress={() => playSequence(0)}
+        />
         <Text style={{ flex: 1, minWidth: 220, color: t.textDim, fontSize: 12, lineHeight: 17 }}>
-          {sequence.length} lectures, verse by verse — {speaker === 'all' ? 'your Maharajas first' : `${honoured(MAHARAJAS[speaker].short)} first`}, others where they have not spoken.
+          {prose
+            ? `${talks.audio.length} audio lectures — ${whose}, then other Maharajas.`
+            : `${sequence.length} lectures, verse by verse — ${whose}, others where they have not spoken.`}
         </Text>
         <Button size="sm" variant="ghost" icon="globe-outline" label="vedabase.io" onPress={() => openExternal(vedabaseUrl(book, part, n))} />
       </View>
+      {prose ? (
+        <View style={{ marginTop: 22 }}>
+          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 7, marginBottom: 6 }}>
+            <Ionicons name="headset" size={15} color={t.textSub} />
+            <Text style={{ flex: 1, color: t.text, fontSize: 15, fontWeight: '800' }}>Lectures</Text>
+            <Badge text={String(talks.audio.length)} color={t.textDim} />
+          </View>
+          {talks.audio.length === 0 ? (
+            <Text style={{ color: t.textDim, fontSize: 13 }}>No archive lecture on this chapter yet — the videos alongside may help.</Text>
+          ) : (showAllTalks ? talks.audio : talks.audio.slice(0, PROSE_FOLD)).map((l) => <LectureRow key={l.id} lecture={l} />)}
+          {talks.audio.length > PROSE_FOLD ? (
+            <Button size="sm" variant="ghost" label={showAllTalks ? 'Show fewer' : `Show all ${talks.audio.length}`} onPress={() => setShowAllTalks((v) => !v)} style={{ alignSelf: 'flex-start', marginTop: 4 }} />
+          ) : null}
+        </View>
+      ) : null}
     </View>
   );
 
   return (
     <FlatList
       ref={listRef}
-      data={counts}
+      data={prose ? [] : counts}
       keyExtractor={(c) => c.entry}
       ListHeaderComponent={header}
       contentContainerStyle={{ padding: 28, paddingBottom: 40 }}
@@ -413,8 +524,8 @@ function ChapterPane({ sel }: { sel: NonNullable<Sel> }) {
           >
             {({ hovered }) => (
               <>
-                <View style={{ width: 44 }}>
-                  <Text style={{ color: t.ink(meta.color), fontSize: 13, fontWeight: '800' }}>{item.entry}</Text>
+                <View style={{ width: book === 'ISO' ? 72 : 44 }}>
+                  <Text style={{ color: t.ink(meta.color), fontSize: item.entry === '0' ? 11 : 13, fontWeight: '800' }}>{entryName(item.entry)}</Text>
                   {seqIdx >= 0 && (hovered || on) ? (
                     <View style={{ marginTop: 6, marginLeft: -6 }}>
                       <IconButton icon="play" label={`Play the chapter from ${verseLabel(book, part, n, item.entry)}`} size={28} iconSize={14} color={t.ink(meta.color)} onPress={() => playSequence(seqIdx)} />
@@ -463,32 +574,62 @@ function ChapterTalksPane({ sel }: { sel: NonNullable<Sel> }) {
   const talks = useMemo(() => chapterTalks(sel.book, sel.part, sel.n, speaker), [sel.book, sel.part, sel.n, speaker]);
   return (
     <ScrollView contentContainerStyle={{ padding: 22 }}>
-      <Kicker text="On the whole chapter" />
-      <Text style={{ color: t.text, fontSize: 17, fontWeight: '800', marginTop: 4 }}>{chapterLabel(sel.book, sel.part, sel.n)}</Text>
+      <Kicker text={isSingleChapter(sel.book) ? 'On the whole book' : 'On the whole chapter'} />
+      <Text style={{ color: t.text, fontSize: 17, fontWeight: '800', marginTop: 4 }}>
+        {isSingleChapter(sel.book) ? BOOK_META[sel.book].short : chapterLabel(sel.book, sel.part, sel.n)}
+      </Text>
       <Text style={{ color: t.textDim, fontSize: 12.5, marginTop: 6, lineHeight: 18 }}>
         Select a verse in the middle to see every lecture on it.
       </Text>
       <View style={{ marginTop: 16 }}>
         {talks.audio.length ? talks.audio.map((l) => <LectureRow key={l.id} lecture={l} />) : (
-          <Text style={{ color: t.textDim, fontSize: 13 }}>No talks on the chapter as a whole.</Text>
+          <Text style={{ color: t.textDim, fontSize: 13 }}>No talks on the {isSingleChapter(sel.book) ? 'book' : 'chapter'} as a whole.</Text>
         )}
       </View>
       {talks.video.length ? (
         <View style={{ marginTop: 18 }}>
           <Kicker text="Videos" />
-          {talks.video.map((v) => <VideoRow key={v.videoId} video={toVideo(v)} />)}
+          {talks.video.map((v) => <VideoRow key={v.videoId} video={verseVideoResult(v)} />)}
         </View>
       ) : null}
     </ScrollView>
   );
 }
 
-const toVideo = (v: VerseVideo): VideoResult => ({
-  videoId: v.videoId, title: v.title, channel: v.channel, durationSec: v.durationSec,
-  thumbnail: `https://i.ytimg.com/vi/${v.videoId}/mqdefault.jpg`,
-});
+/** Right pane for a prose chapter: indexed videos by your speakers, then a live YouTube search. */
+function ProseVideosPane({ sel }: { sel: NonNullable<Sel> }) {
+  const t = useTheme();
+  const [speaker] = useVerseSpeaker();
+  const talks = useMemo(() => chapterTalks(sel.book, sel.part, sel.n, speaker), [sel.book, sel.part, sel.n, speaker]);
+  const label = chapterLabel(sel.book, sel.part, sel.n);
+  const live = useLiveVerseVideos(sel.book, sel.part, sel.n, null, label, talks.video, speaker);
+  return (
+    <ScrollView contentContainerStyle={{ padding: 22 }}>
+      {talks.video.length > 0 ? (
+        <View style={{ marginBottom: 20 }}>
+          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 7, marginBottom: 6 }}>
+            <Ionicons name="logo-youtube" size={14} color={t.youtube} />
+            <Text style={{ flex: 1, color: t.text, fontSize: 13.5, fontWeight: '800' }}>Videos by your speakers</Text>
+            <Badge text={String(talks.video.length)} color={t.textDim} />
+          </View>
+          {talks.video.map((v) => <VideoRow key={v.videoId} video={verseVideoResult(v)} />)}
+        </View>
+      ) : null}
+      <View style={{ flexDirection: 'row', alignItems: 'center', gap: 7, marginBottom: 6 }}>
+        <Ionicons name="search" size={14} color={t.textSub} />
+        <Text style={{ flex: 1, color: t.text, fontSize: 13.5, fontWeight: '800' }}>More on YouTube</Text>
+      </View>
+      {live.loading ? <Spinner /> : live.error ? (
+        <Button size="sm" label="Could not reach YouTube — retry" onPress={live.retry} />
+      ) : live.videos.length ? live.videos.map((v) => <VideoRow key={v.videoId} video={v} />) : (
+        <Text style={{ color: t.textDim, fontSize: 12.5 }}>No further videos name this chapter.</Text>
+      )}
+    </ScrollView>
+  );
+}
 
 const TIERS: SpeakerTier[] = [0, 1, 2, 3];
+const PROSE_FOLD = 10;
 const FOLD = 8;
 
 function VersePane({ sel }: { sel: NonNullable<Sel> & { entry: string } }) {
@@ -532,7 +673,7 @@ function VersePane({ sel }: { sel: NonNullable<Sel> & { entry: string } }) {
       {total === 0 ? (
         <View style={{ marginTop: 18, padding: 14, borderRadius: 10, backgroundColor: t.surface, borderWidth: 1, borderColor: t.border }}>
           <Text style={{ color: t.text, fontSize: 13.5, fontWeight: '700' }}>No archive lecture on this verse yet</Text>
-          <Text style={{ color: t.textDim, fontSize: 12.5, marginTop: 4 }}>Videos found on YouTube are below. Talks on the whole chapter: deselect the verse.</Text>
+          <Text style={{ color: t.textDim, fontSize: 12.5, marginTop: 4 }}>Videos found on YouTube are below. Talks on the whole {isSingleChapter(book) ? 'book' : 'chapter'} are listed when no verse is selected — click the {isSingleChapter(book) ? 'book' : 'chapter'} on the left.</Text>
         </View>
       ) : null}
 
@@ -570,7 +711,7 @@ function VersePane({ sel }: { sel: NonNullable<Sel> & { entry: string } }) {
             <Text style={{ flex: 1, color: t.text, fontSize: 13.5, fontWeight: '800' }}>Videos by your speakers</Text>
             <Badge text={String(lectures.video.length)} color={t.textDim} />
           </View>
-          {lectures.video.map((v) => <VideoRow key={v.videoId} video={toVideo(v)} />)}
+          {lectures.video.map((v) => <VideoRow key={v.videoId} video={verseVideoResult(v)} />)}
         </View>
       ) : null}
 
@@ -589,7 +730,21 @@ function VersePane({ sel }: { sel: NonNullable<Sel> & { entry: string } }) {
   );
 }
 
-function LectureRow({ lecture }: { lecture: VerseAudio }) {
+/** Shards of the one-chapter books, where a chapter talk is on the whole book. */
+const SINGLE_CHAPTER_SHARDS = new Set(['noi', 'iso', 'bs']);
+
+/** Same rules as components/VerseLectureRow.tsx. */
+function rangeLabel(l: VerseAudio): string | null {
+  if (l.from == null) {
+    if (l.shard === 'nod' || l.shard === 'song') return null;
+    return SINGLE_CHAPTER_SHARDS.has(l.shard) ? 'Whole book' : 'Whole chapter';
+  }
+  const from = l.from === 0 ? 'Invocation' : String(l.from);
+  if (l.to != null && l.to !== l.from) return `Verses ${from}–${l.to}`;
+  return l.from === 0 ? 'Invocation' : null;
+}
+
+export function LectureRow({ lecture }: { lecture: VerseAudio }) {
   const t = useTheme();
   const audio = useAudioMeta();
   const { isDownloaded } = useDownload();
@@ -602,7 +757,7 @@ function LectureRow({ lecture }: { lecture: VerseAudio }) {
   const playing = isCur && audio.isPlaying;
   const h = historyMap.get(lecture.id);
   const frac = h && h.durationMs > 0 ? h.positionMs / h.durationMs : 0;
-  const range = lecture.from == null ? 'Whole chapter' : lecture.to != null && lecture.to !== lecture.from ? `Verses ${lecture.from}–${lecture.to}` : null;
+  const range = rangeLabel(lecture);
   const date = lecture.date ? (/^\d{4}-\d{2}-\d{2}$/.test(lecture.date) ? formatRecordingDate(lecture.date) : lecture.date) : null;
   return (
     <Hover
@@ -638,7 +793,7 @@ function LectureRow({ lecture }: { lecture: VerseAudio }) {
   );
 }
 
-function VideoRow({ video }: { video: VideoResult }) {
+export function VideoRow({ video }: { video: VideoResult }) {
   const t = useTheme();
   return (
     <Hover
@@ -660,47 +815,6 @@ function VideoRow({ video }: { video: VideoResult }) {
       </View>
     </Hover>
   );
-}
-
-/**
- * Live YouTube search for the verse ("SB 1.2.6 lecture"), keeping only videos
- * whose title names this very verse. Same logic as app/shastra/verse.tsx.
- */
-function useLiveVerseVideos(book: BookKey, part: string, n: number, entry: string, label: string, known: VerseVideo[], speaker: string) {
-  const [videos, setVideos] = useState<VideoResult[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState(false);
-  const [nonce, setNonce] = useState(0);
-  useEffect(() => {
-    const ctrl = new AbortController();
-    const timeout = setTimeout(() => ctrl.abort(), 20000);
-    let stale = false;
-    setLoading(true);
-    setError(false);
-    const lo = entryStart(entry);
-    const hi = entryEnd(entry);
-    const knownIds = new Set(known.map((v) => v.videoId));
-    const who = speaker !== 'all' && speaker in MAHARAJAS ? `${MAHARAJAS[speaker as keyof typeof MAHARAJAS].short} ` : '';
-    // Debounced: arrowing through verses shouldn't fire a search per verse.
-    const kick = setTimeout(() => {
-      search(`${who}${label.replace('-', ' ')} lecture`, ctrl.signal)
-        .then((page) => {
-          if (stale) return;
-          setVideos(page.videos.filter((v) => {
-            if (knownIds.has(v.videoId)) return false;
-            if (v.durationSec != null && v.durationSec < 300) return false;
-            return parseVerseRefs(v.title).some((r) =>
-              r.book === book && (book === 'BG' || r.part === part) && r.chapter === n &&
-              r.from != null && r.from <= hi && (r.to ?? r.from) >= lo);
-          }));
-        })
-        .catch(() => { if (!stale) setError(true); })
-        .finally(() => { clearTimeout(timeout); if (!stale) setLoading(false); });
-    }, 350);
-    return () => { stale = true; clearTimeout(kick); clearTimeout(timeout); ctrl.abort(); };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [book, part, n, entry, label, speaker, nonce]);
-  return { videos, loading, error, retry: () => setNonce((x) => x + 1) };
 }
 
 export { selHref };

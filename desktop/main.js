@@ -13,6 +13,31 @@ const { fetchForRenderer } = require('./lib/net');
 
 const APP_NAME = 'Vaishnava Vani';
 
+// --- Startup safety net -------------------------------------------------------
+// A failure during startup must never leave a windowless process behind: it
+// would hold the single-instance lock, so every later double-click on the icon
+// silently does nothing ("the app doesn't open"). Log to userData/startup.log
+// and show the error instead.
+function startupLog(...parts) {
+  try {
+    fs.appendFileSync(
+      path.join(app.getPath('userData'), 'startup.log'),
+      `[${new Date().toISOString()}] ${parts.map(String).join(' ')}\n`,
+    );
+  } catch { /* logging is best-effort */ }
+}
+function fatal(where, err) {
+  startupLog('FATAL', where, err && err.stack ? err.stack : err);
+  try {
+    dialog.showErrorBox(
+      `${APP_NAME} could not start`,
+      `${where}: ${err && err.message ? err.message : err}\n\n` +
+        `Details were saved to:\n${path.join(app.getPath('userData'), 'startup.log')}`,
+    );
+  } catch { /* no UI available */ }
+}
+process.on('uncaughtException', (err) => fatal('Unexpected error', err));
+
 // The Expo web export. `npm run build` writes it here; see README.md.
 const WEB_DIR = path.join(__dirname, 'web');
 
@@ -122,7 +147,21 @@ function createWindow() {
   });
 
   if (state.maximized) mainWindow.maximize();
-  mainWindow.once('ready-to-show', () => mainWindow.show());
+  // Show on first paint, but never stay invisible: if the page fails to load
+  // (or ready-to-show never fires) the window still appears after 4 s.
+  const reveal = () => {
+    if (mainWindow && !mainWindow.isDestroyed() && !mainWindow.isVisible()) mainWindow.show();
+  };
+  mainWindow.once('ready-to-show', reveal);
+  setTimeout(reveal, 4000);
+  mainWindow.webContents.on('did-fail-load', (_e, code, desc, url) => {
+    startupLog('did-fail-load', code, desc, url);
+    reveal();
+  });
+  mainWindow.webContents.on('render-process-gone', (_e, details) => {
+    startupLog('render-process-gone', JSON.stringify(details));
+    reveal();
+  });
 
   // Keep in-app navigation inside the app; send real links to the browser.
   mainWindow.webContents.setWindowOpenHandler(({ url }) => {
@@ -444,6 +483,39 @@ async function runShots(win, planPath) {
     if (step.route) {
       await win.webContents.executeJavaScript(`window.__vvNavigate && window.__vvNavigate(${JSON.stringify(step.route)})`);
     }
+    // Real input (sendInputEvent): click an element found by aria-label or
+    // placeholder, then type text and press keys, as a user would.
+    if (step.clickLabel || step.clickPlaceholder) {
+      const sel = step.clickLabel
+        ? `[aria-label=${JSON.stringify(step.clickLabel)}]`
+        : `[placeholder=${JSON.stringify(step.clickPlaceholder)}]`;
+      const pt = await win.webContents.executeJavaScript(`(() => {
+        const el = [...document.querySelectorAll(${JSON.stringify(sel)})].find((e) => e.offsetParent !== null);
+        if (!el) return null;
+        el.scrollIntoView({ block: 'center' });
+        const r = el.getBoundingClientRect();
+        return { x: Math.round(r.left + Math.min(r.width / 2, 60)), y: Math.round(r.top + r.height / 2) };
+      })()`);
+      log.write(`[click] ${sel} -> ${JSON.stringify(pt)}\n`);
+      if (pt) {
+        win.webContents.sendInputEvent({ type: 'mouseMove', x: pt.x, y: pt.y });
+        await wait(120);
+        win.webContents.sendInputEvent({ type: 'mouseDown', x: pt.x, y: pt.y, button: 'left', clickCount: 1 });
+        win.webContents.sendInputEvent({ type: 'mouseUp', x: pt.x, y: pt.y, button: 'left', clickCount: 1 });
+        await wait(250);
+      }
+    }
+    if (step.type) {
+      for (const ch of step.type) {
+        win.webContents.sendInputEvent({ type: 'char', keyCode: ch });
+        await wait(25);
+      }
+    }
+    for (const key of step.keys ?? []) {
+      win.webContents.sendInputEvent({ type: 'keyDown', keyCode: key });
+      win.webContents.sendInputEvent({ type: 'keyUp', keyCode: key });
+      await wait(80);
+    }
     if (step.js) {
       try {
         const r = await win.webContents.executeJavaScript(step.js);
@@ -477,6 +549,7 @@ if (!app.requestSingleInstanceLock()) {
   });
 
   app.whenReady().then(async () => {
+    startupLog('start', app.getVersion(), process.platform, process.arch, app.getPath('exe'));
     if (!fs.existsSync(path.join(WEB_DIR, 'index.html'))) {
       dialog.showErrorBox(
         'Web bundle missing',
@@ -493,11 +566,17 @@ if (!app.requestSingleInstanceLock()) {
     downloads.audioBaseUrl = origin;
     downloads.on('registry', (registry) => mainWindow?.webContents.send('downloads:registry', registry));
     downloads.on('progress', (p) => mainWindow?.webContents.send('downloads:progress', p));
-    await downloads.load();
+    // A broken downloads folder or index must not stop the window: streaming
+    // still works, and the error is logged.
+    try {
+      await downloads.load();
+    } catch (err) {
+      startupLog('downloads.load failed', err && err.stack ? err.stack : err);
+    }
 
     // An unpackaged `electron .` run on macOS has no .app icon of its own.
     if (process.platform === 'darwin' && app.dock) {
-      app.dock.setIcon(path.join(__dirname, 'build', 'icon.png'));
+      try { app.dock.setIcon(path.join(__dirname, 'build', 'icon.png')); } catch {}
     }
 
     configureSession();
@@ -508,6 +587,9 @@ if (!app.requestSingleInstanceLock()) {
     app.on('activate', () => {
       if (BrowserWindow.getAllWindows().length === 0) createWindow();
     });
+  }).catch((err) => {
+    fatal('Starting up', err);
+    app.exit(1);
   });
 
   app.on('window-all-closed', () => {

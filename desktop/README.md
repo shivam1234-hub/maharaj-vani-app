@@ -41,6 +41,15 @@ time — *More info → Run anyway*.
 | Download finished | — | Windows toast when the window is in the background |
 | Alert.alert | native | Windows message box (`utils/webAlert.web.ts`; react-native-web's Alert is a no-op) |
 
+## Startup safety
+
+The window is shown on first paint, or after 4 s regardless, and also on a
+failed load or a crashed renderer — so a startup problem can never leave an
+invisible process holding the single-instance lock (which would make every
+later launch silently do nothing). Startup steps and errors are logged to
+`%APPDATA%\Vaishnava Vani\startup.log`, and a fatal error is shown in a
+message box with that path.
+
 ## Keyboard
 
 Space play/pause · ←/→ ±15 s · Shift+←/→ speed · Ctrl+0 normal speed ·
