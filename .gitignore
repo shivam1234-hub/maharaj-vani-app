@@ -26,3 +26,6 @@ release.keystore
 *.jks
 .idea/
 .DS_Store
+
+# Site crawl cache for scripts/build-verse-index.js
+scripts/.cache/

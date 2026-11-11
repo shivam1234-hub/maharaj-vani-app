@@ -1,9 +1,27 @@
-export type MaharajKey = 'radhanath' | 'lokanath' | 'bhaktiashraya' | 'gourgovinda';
+export type MaharajKey =
+  | 'radhanath'
+  | 'lokanath'
+  | 'bhaktiashraya'
+  | 'gourgovinda'
+  | 'amarendra'
+  | 'radheshyam'
+  | 'vidvangauranga'
+  | 'vamsivadan'
+  | 'kartikeya';
+
+/**
+ * Who a recording belongs to. 'guest' marks a lecture by a speaker the app
+ * has no catalogue for — the other-Maharaja fallback in the Verses tab — whose
+ * name is then carried in `speaker`.
+ */
+export type SpeakerKey = MaharajKey | 'guest';
 
 /** One audio recording scraped from audio.iskcondesiretree.com. */
 export interface Recording {
   id: string;
-  maharaj: MaharajKey;
+  maharaj: SpeakerKey;
+  /** Display name, set only for guest recordings. */
+  speaker?: string;
   title: string;
   /** Breadcrumb + title, used for search and for the detail header. */
   fullTitle: string;

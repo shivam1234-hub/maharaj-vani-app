@@ -52,6 +52,37 @@ class PipModule(reactContext: ReactApplicationContext) :
   override fun getName() = NAME
 
   /**
+   * Whether the activity is in the floating window right now, and that
+   * window's real size in dp. The screen asks this directly whenever the app
+   * goes to or comes back from the background, so it never depends on having
+   * caught the one-shot "pipModeChanged" event. When that event was missed,
+   * the window showed the full phone layout shrunk: the header plus a slice
+   * of the video, the rest black. The size comes from the window itself,
+   * because some phones report the full-screen size in the PiP config.
+   */
+  @ReactMethod(isBlockingSynchronousMethod = true)
+  fun getState(): com.facebook.react.bridge.WritableMap {
+    val map = Arguments.createMap()
+    val activity = reactApplicationContext.currentActivity
+    val inPip = activity != null &&
+      Build.VERSION.SDK_INT >= Build.VERSION_CODES.N &&
+      activity.isInPictureInPictureMode
+    map.putBoolean("inPip", inPip)
+    if (inPip) {
+      val density = activity!!.resources.displayMetrics.density
+      val decor = activity.window?.decorView
+      val w = decor?.width ?: 0
+      val h = decor?.height ?: 0
+      map.putInt("width", if (w > 0) Math.round(w / density) else activity.resources.configuration.screenWidthDp)
+      map.putInt("height", if (h > 0) Math.round(h / density) else activity.resources.configuration.screenHeightDp)
+    } else {
+      map.putInt("width", 0)
+      map.putInt("height", 0)
+    }
+    return map
+  }
+
+  /**
    * Arms PiP. Read by [MainActivity.onUserLeaveHint]; without this gate,
    * leaving ANY screen would shrink the whole app into a floating window.
    * Set only while the video screen is up.
@@ -331,12 +362,47 @@ class PipModule(reactContext: ReactApplicationContext) :
     @JvmStatic
     fun enterPipOn(activity: android.app.Activity): Boolean {
       if (Build.VERSION.SDK_INT < Build.VERSION_CODES.O) return false
+      // The app is locked to portrait, but the floating window is a 16:9
+      // landscape box. Several OEM skins then keep the activity portrait and
+      // letterbox it inside that box — the video shows in one half of the
+      // window and the other half is black. Lifting the lock for the time in
+      // PiP lets the activity take the window's own shape; it is put back
+      // when PiP ends (MainActivity.onPictureInPictureModeChanged).
+      unlockOrientation(activity)
       return try {
-        activity.enterPictureInPictureMode(buildParams(activity))
+        val ok = activity.enterPictureInPictureMode(buildParams(activity))
+        if (!ok) restoreOrientation(activity)
+        ok
       } catch (e: Throwable) {
         // Ignored on purpose — see above. Reported as false so the button can
         // say why nothing happened.
+        restoreOrientation(activity)
         false
+      }
+    }
+
+    /** Orientation requested before PiP lifted the portrait lock, or null. */
+    @Volatile
+    private var savedOrientation: Int? = null
+
+    private fun unlockOrientation(activity: android.app.Activity) {
+      try {
+        val current = activity.requestedOrientation
+        if (current != android.content.pm.ActivityInfo.SCREEN_ORIENTATION_UNSPECIFIED) {
+          savedOrientation = current
+          activity.requestedOrientation = android.content.pm.ActivityInfo.SCREEN_ORIENTATION_UNSPECIFIED
+        }
+      } catch (e: Throwable) {
+      }
+    }
+
+    @JvmStatic
+    fun restoreOrientation(activity: android.app.Activity) {
+      val saved = savedOrientation ?: return
+      savedOrientation = null
+      try {
+        activity.requestedOrientation = saved
+      } catch (e: Throwable) {
       }
     }
   }

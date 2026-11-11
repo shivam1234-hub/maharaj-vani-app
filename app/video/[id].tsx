@@ -16,8 +16,7 @@ import { useMaharaj } from '../../contexts/MaharajContext';
 import { findArchiveCandidates } from '../../utils/matchArchive';
 import {
   PipState, enterPip, isPipAllowed, isPipSupported, isPipWindow, onPipAction,
-  onPipModeChanged, openPipSettings, setPipEnabled, setPipPlaying,
-} from '../../utils/pip';
+  onPipModeChanged, openPipSettings, setPipEnabled, setPipPlaying, getPipState } from '../../utils/pip';
 import { MaharajKey, Recording } from '../../data/types';
 import { MAHARAJAS, MAHARAJ_ORDER } from '../../data/maharajas';
 import * as Notifications from 'expo-notifications';
@@ -101,6 +100,31 @@ export default function VideoScreen() {
       }),
     [],
   );
+  // The event above can be missed, which left the floating window showing
+  // the whole screen shrunk. Ask the activity directly as well, a few times
+  // around each background/foreground switch (the window animates in).
+  useEffect(() => {
+    const check = () => {
+      const st = getPipState();
+      if (!st) return;
+      if (st.inPip !== inPipRef.current || (st.inPip && st.width > 0)) {
+        inPipRef.current = st.inPip;
+        setPip((prev) =>
+          prev.inPip === st.inPip && prev.width === st.width && prev.height === st.height ? prev : st,
+        );
+      }
+    };
+    const timers: ReturnType<typeof setTimeout>[] = [];
+    const sub = AppState.addEventListener('change', () => {
+      timers.forEach(clearTimeout);
+      timers.length = 0;
+      [0, 250, 700, 1500].forEach((ms) => timers.push(setTimeout(check, ms)));
+    });
+    return () => {
+      sub.remove();
+      timers.forEach(clearTimeout);
+    };
+  }, []);
 
   // The floating window's button is ours to service: it broadcasts back
   // here rather than controlling the player directly.
@@ -133,7 +157,7 @@ export default function VideoScreen() {
     if (!isPipAllowed()) {
       Alert.alert(
         'Floating window is turned off',
-        'Picture-in-picture is switched off for Maharaj Vani in your phone settings. ' +
+        'Picture-in-picture is switched off for Vaishnava Vani in your phone settings. ' +
           'Turn it on to keep the video playing in a small window.',
         [
           { text: 'Not now', style: 'cancel' },

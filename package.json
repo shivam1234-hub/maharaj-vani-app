@@ -1,7 +1,7 @@
 {
   "name": "maharaj-vani",
-  "version": "1.8.1",
-  "description": "Radhanath Swami, Lokanath Swami, Bhakti Ashraya Vaishnava Swami & Gour Govinda Swami lecture app — offline audio, search, YouTube",
+  "version": "1.9.2",
+  "description": "Vaishnava Vani — lectures of Radhanath Swami, Lokanath Swami, Bhakti Ashraya Vaishnava Swami, Gour Govinda Swami and five Prabhujis — verse by verse through BG, SB and CC, offline audio, search, YouTube",
   "main": "index.js",
   "scripts": {
     "start": "expo start",
@@ -12,6 +12,18 @@
     "scrape:lokanath": "node scripts/scrape-audio.js --only lokanath",
     "scrape:bhaktiashraya": "node scripts/scrape-audio.js --only bhaktiashraya",
     "scrape:gourgovinda": "node scripts/scrape-audio.js --only gourgovinda",
+    "scrape:amarendra": "node scripts/scrape-audio.js --only amarendra",
+    "scrape:radheshyam": "node scripts/scrape-audio.js --only radheshyam",
+    "scrape:vidvangauranga": "node scripts/scrape-audio.js --only vidvangauranga",
+    "scrape:vamsivadan": "node scripts/scrape-audio.js --only vamsivadan",
+    "scrape:kartikeya": "node scripts/scrape-audio.js --only kartikeya",
+    "crawl": "node scripts/crawl-site.js",
+    "verses:table": "node scripts/build-verse-table.js",
+    "verses:text": "node scripts/build-shastra.js",
+    "verses:youtube": "node scripts/scrape-verse-youtube.js",
+    "verses:others": "node scripts/build-verse-others.js",
+    "verses:index": "node scripts/build-verse-index.js",
+    "verses": "npm run verses:others && npm run verses:index",
     "stats": "node scripts/catalog-stats.js"
   },
   "license": "ISC",

@@ -6,7 +6,7 @@ import {
 import { router } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { MAHARAJAS } from '../data/maharajas';
+import { MAHARAJAS, maharajOf, GUEST_ACCENT, honoured } from '../data/maharajas';
 import { Recording, formatDuration, formatRecordingDate } from '../data/types';
 import { GlobalVideoHit, useGlobalSearch } from '../hooks/useGlobalSearch';
 
@@ -17,6 +17,8 @@ type Row =
   | { kind: 'header'; label: string; key: string }
   | { kind: 'audio'; rec: Recording }
   | { kind: 'video'; vid: GlobalVideoHit };
+
+const GUEST_SPEAKER = { accent: GUEST_ACCENT, initials: 'ISK' };
 
 export default function GlobalSearchScreen() {
   const insets = useSafeAreaInsets();
@@ -94,7 +96,7 @@ export default function GlobalSearchScreen() {
             <View key={key} style={styles.tally}>
               <View style={[styles.dot, { backgroundColor: MAHARAJAS[key].accent }]} />
               <Text style={styles.tallyText}>
-                {MAHARAJAS[key].short} {count}
+                {honoured(MAHARAJAS[key].short)} {count}
               </Text>
             </View>
           ))}
@@ -115,7 +117,9 @@ export default function GlobalSearchScreen() {
 
           if (item.kind === 'audio') {
             const rec = item.rec;
-            const m = MAHARAJAS[rec.maharaj];
+            // Global search only covers the catalogues, so a guest never
+            // reaches here — but fall back rather than crash if one does.
+            const m = maharajOf(rec.maharaj) ?? GUEST_SPEAKER;
             return (
               <Pressable
                 onPress={() => router.push(`/lecture/${rec.id}`)}

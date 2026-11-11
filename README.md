@@ -1,6 +1,8 @@
-# Maharaj Vani
+# Vaishnava Vani
 
-<p><a href="https://github.com/shivam1234-hub/maharaj-vani-app/releases/latest/download/MaharajVani.apk"><b>⬇️ Download APK</b></a> · <a href="https://github.com/shivam1234-hub/maharaj-vani-app/releases/latest">all versions</a><br><sub>Android: open the downloaded file and tap Install. You may need to allow installs from your browser first.</sub></p>
+*(formerly Maharaj Vani — renamed in 1.9.1; the package id `com.maharajvani.app` is unchanged, so it updates in place.)*
+
+<p><a href="https://github.com/shivam1234-hub/maharaj-vani-app/releases/latest/download/VaishnavaVani.apk"><b>⬇️ Download APK</b></a> · <a href="https://github.com/shivam1234-hub/maharaj-vani-app/releases/latest">all versions</a><br><sub>Android: open the downloaded file and tap Install. You may need to allow installs from your browser first.</sub></p>
 
 ## Screenshots
 
@@ -8,7 +10,10 @@
 
 
 Offline-first lecture app for **His Holiness Radhanath Swami**, **His Holiness Lokanath Swami**,
-**His Holiness Bhakti Ashraya Vaishnava Swami** and **His Holiness Gour Govinda Swami**,
+**His Holiness Bhakti Ashraya Vaishnava Swami** and **His Holiness Gour Govinda Swami**, and
+**HG Amarendra Prabhu**, **HG Radheshyam Prabhu**, **HG Vidvan Gauranga Prabhu** and
+**HG Vamsi Vadan Prabhu** (Vamsivadan Das, Mayapur Institute) and **HG Kartikeya Prabhu**
+(Kartikeya Das, ISKCON Whitefield),
 built with the same architecture as the Prabhupada Vani app (Expo Router, react-native-track-player,
 resumable downloads, listening history, favourites and tags).
 
@@ -29,6 +34,16 @@ Scraped from `audio.iskcondesiretree.com`:
 | Lokanath Swami | 2,442 | 2,073 | 369 | 57.9 GB |
 | Bhakti Ashraya Vaishnava Swami | 742 | 580 | 162 | 20.2 GB |
 | Gour Govinda Swami | 926 | 897 | 29 | 16.4 GB |
+| Amarendra Prabhu | 91 | — | 91 | 3.2 GB |
+| Radheshyam Prabhu | 2,355 | 1,887 | 468 | 40.6 GB |
+| Vidvan Gauranga Prabhu | 59 | 53 | 6 | 2.0 GB |
+| Vamsi Vadan Prabhu | 42 | — | 42 | 0.9 GB |
+| Kartikeya Prabhu | 523 | 523 | 0 | 7.6 GB |
+
+Amarendra Prabhu and Vamsi Vadan Prabhu have no folder of their own on the site; all of their
+recordings are found by name in shared collections. The name patterns exclude look-alikes:
+"Amrendra Hari Prabhu" (another devotee), plain "Gauranga Prabhu" (HG Gauranga Das) and
+"Vamsivadana Thakura" (the acharya, whose appearance day is lectured on every year).
 
 Every recording carries a direct, range-requestable MP3 URL, so playback and download need no
 intermediate metadata request.
@@ -52,6 +67,27 @@ under a folder in one request, but caps at exactly 5000 lines. For Radhanath Swa
 of his 13 subfolders with no error at all. Walking `index.php?q=f&f=<folder>` page by page has no
 cap, and folder pages additionally carry the display title and file size the playlist omits.
 
+## Verses tab — every shloka, in sequence
+
+Bhagavad-gita (657 verse units), Srimad-Bhagavatam (all 12 cantos, 13,000) and
+Caitanya-caritamrta (11,359), chapter by chapter in order, with Srila Prabhupada's translation of
+each verse. Joined verses (BG 1.16-18) are one unit, as Vedabase prints them.
+
+- **Book → canto/lila → chapter → verse.** Chapter rows show how many verses have lectures.
+- **Each verse** lists every lecture on it, in tiers: the chosen speaker, the other catalogued
+  Maharajas and Prabhujis, then other Maharajas (ISKCON Swamis), Srila Prabhupada, and other
+  Prabhujis/Matajis. A class *on* the verse ranks above a reading that passes through it, and
+  English/Hindi above other languages. Prebuilt YouTube lectures by the catalogued speakers are
+  shown, plus a live YouTube search filtered to videos whose title names that verse.
+- **Play chapter in sequence** queues one lecture per verse, in verse order — the chosen
+  speaker's where they spoke on it, otherwise another Maharaja's. The queue keeps playing with the
+  app closed, and the notification's next button steps to the next verse.
+- **Go to verse** accepts "SB 1.2.6", "BG 2.47", "CC Madhya 20.108", "SB 10.14" or just "2.47".
+
+Verses with at least one lecture (counting classes on a range for each verse in it):
+BG 100%, SB 99.9%, CC 96.9%. The remaining CC verses (mostly Antya-lila) have no lecture on the
+archive; their pages fall back to the live YouTube search.
+
 ## Tabs
 
 - **Home** — Maharaja switch, catalogue stats, "continue listening", category grid, latest recordings.
@@ -66,13 +102,29 @@ cap, and folder pages additionally carry the display title and file size the pla
 ## Data pipeline
 
 ```bash
-npm run scrape              # every Maharaja (slow — hundreds of folder pages)
+npm run crawl               # whole-site folder crawl → scripts/.cache/site-crawl.jsonl (~10 min)
+npm run scrape              # every speaker (phase 2 reads the crawl cache when present)
 npm run scrape:radhanath    # one at a time; each rewrites only its own file
 npm run scrape:lokanath
 npm run scrape:bhaktiashraya
 npm run scrape:gourgovinda
 npm run stats               # coverage + metadata sanity check
+npm run scrape -- --remeta  # no network: re-derive dates/places/categories of existing catalogues
+
+npm run verses:table        # every verse of BG/SB/CC in order (vedabase.io) → data/verse-table.json
+npm run verses:text         # verse translations → data/shastra/text-{BG,SB,CC}.json
+npm run verses:youtube      # catalogued speakers' verse videos → data/verse-youtube.json
+npm run verses              # other speakers from the crawl + build data/verse-index/*.json
 ```
+
+The verse index is sharded — BG, one file per SB canto, CC, each ≤2 MB — and the app parses a
+shard only when a chapter in it is opened. Other speakers' recordings have no catalogue; their
+ids (`gst-<shard>-…`) are derived from the path, so downloads, history and favourites work for
+them too. To keep the bundle reasonable, other Maharajas are capped at 25 lectures per verse
+(round-robin across speakers) and other Prabhujis/Matajis only top a verse up to 12.
+
+The verse parser (`utils/verseRef.js`) is shared by the build scripts and the app, so the
+prebuilt index and the live YouTube filter read "SB 1.2.6" identically.
 
 Output is one file per Maharaja (`data/catalog-<key>.json`) rather than one combined blob, because
 `hooks/useLectures.ts` requires them lazily — only the catalogue being browsed is parsed, keeping
@@ -84,6 +136,9 @@ Titles and folder names are the only metadata the source provides, so the scrape
 
 - **date** — several grammars (`1989-01-13`, `18-04-89`, `22_Nov_2007`, `20070122`). Verse
   references are masked out first, since `JPS SB 01-05-35` would otherwise parse as 1 May 2035.
+  Bare `NN-NN-NN` is ambiguous: ISKCON Chowpatty names files YY-MM-DD, most others DD-MM-YY, so
+  the folder's year decides, and future dates are rejected (`11-11-26` was once read as
+  11 Nov 2026 instead of 26 Nov 2011).
 - **location** — matched against a curated place list, longest-name-first so `New Vrindaban` wins
   over `Vrindavan`.
 - **scripture** — normalised to `SB 1.5.35` form.

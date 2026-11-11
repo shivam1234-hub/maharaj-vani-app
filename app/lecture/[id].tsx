@@ -12,7 +12,7 @@ import { useLibrary } from '../../contexts/LibraryContext';
 import { useHistory } from '../../contexts/HistoryContext';
 import { useSettings } from '../../contexts/SettingsContext';
 import { getCatalog, getRecordingById } from '../../hooks/useLectures';
-import { MAHARAJAS } from '../../data/maharajas';
+import { maharajOf, speakerName } from '../../data/maharajas';
 import {
   formatBytes, formatRecordingDate, getCategoryMeta,
 } from '../../data/types';
@@ -54,7 +54,8 @@ export default function LectureScreen() {
 
   const meta = getCategoryMeta(recording.category);
   const accent = meta.color;
-  const maharaj = MAHARAJAS[recording.maharaj];
+  // Undefined for a guest speaker (another Maharaja's lecture from the Verses tab).
+  const maharaj = maharajOf(recording.maharaj);
 
   const isCurrent = audio.recording?.id === recording.id;
   const downloaded = isDownloaded(recording.id);
@@ -101,9 +102,11 @@ export default function LectureScreen() {
   // Same folder, minus this one — the natural "next in the series".
   const related = useMemo(
     () =>
-      getCatalog(recording.maharaj)
-        .filter((r) => r.id !== recording.id && r.folder === recording.folder)
-        .slice(0, 8),
+      maharaj
+        ? getCatalog(maharaj.key)
+            .filter((r) => r.id !== recording.id && r.folder === recording.folder)
+            .slice(0, 8)
+        : [],
     [recording],
   );
 
@@ -135,7 +138,7 @@ export default function LectureScreen() {
 
         <Text style={[styles.title, { fontSize: fs(19) }]}>{recording.title}</Text>
         <Text style={[styles.maharajName, { color: maharaj?.accent ?? accent, fontSize: fs(13) }]}>
-          {maharaj?.name}
+          {maharaj?.name ?? speakerName(recording)}
         </Text>
 
         <View style={styles.metaGrid}>

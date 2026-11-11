@@ -10,7 +10,7 @@ import { useAudio } from '../../contexts/AudioContext';
 import { useHistory } from '../../contexts/HistoryContext';
 import { useMaharaj } from '../../contexts/MaharajContext';
 import { getRecordingById } from '../../hooks/useLectures';
-import { MAHARAJAS } from '../../data/maharajas';
+import { maharajOf, speakerName, honoured } from '../../data/maharajas';
 import { Recording, formatBytes, getCategoryMeta } from '../../data/types';
 
 interface Row {
@@ -174,7 +174,7 @@ export default function DownloadsScreen() {
                 <Text style={styles.cardTitle} numberOfLines={2}>{item.title}</Text>
                 <Text style={styles.cardMeta} numberOfLines={1}>
                   {[
-                    item.maharaj ? MAHARAJAS[item.maharaj as keyof typeof MAHARAJAS]?.short : null,
+                    item.maharaj ? (rec ? speakerName(rec) : maharajOf(item.maharaj) ? honoured(maharajOf(item.maharaj)!.short) : null) : null,
                     formatBytes(item.bytes),
                     rec?.location,
                   ]

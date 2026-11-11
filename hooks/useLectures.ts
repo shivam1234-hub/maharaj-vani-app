@@ -1,6 +1,7 @@
 import { useMemo, useState } from 'react';
 import type { Dispatch, SetStateAction } from 'react';
 import { MaharajKey, Recording } from '../data/types';
+import { getGuestRecordingById } from '../data/verseIndex';
 
 /**
  * Catalogues are required lazily and memoised: only the Maharaja actually
@@ -12,6 +13,11 @@ const LOADERS: Record<MaharajKey, () => Recording[]> = {
   lokanath: () => require('../data/catalog-lokanath.json') as Recording[],
   bhaktiashraya: () => require('../data/catalog-bhaktiashraya.json') as Recording[],
   gourgovinda: () => require('../data/catalog-gourgovinda.json') as Recording[],
+  amarendra: () => require('../data/catalog-amarendra.json') as Recording[],
+  radheshyam: () => require('../data/catalog-radheshyam.json') as Recording[],
+  vidvangauranga: () => require('../data/catalog-vidvangauranga.json') as Recording[],
+  vamsivadan: () => require('../data/catalog-vamsivadan.json') as Recording[],
+  kartikeya: () => require('../data/catalog-kartikeya.json') as Recording[],
 };
 
 const cache: Partial<Record<MaharajKey, Recording[]>> = {};
@@ -31,9 +37,17 @@ const PREFIX_OWNER: Array<[string, MaharajKey]> = [
   ['lns-', 'lokanath'],
   ['bavs-', 'bhaktiashraya'],
   ['ggs-', 'gourgovinda'],
+  ['amp-', 'amarendra'],
+  ['rsp-', 'radheshyam'],
+  ['vgp-', 'vidvangauranga'],
+  ['vvp-', 'vamsivadan'],
+  ['kdp-', 'kartikeya'],
 ];
 
 export function getRecordingById(id: string): Recording | undefined {
+  // Other-speaker lectures from the Verses tab have no catalogue; they are
+  // rebuilt from the verse index.
+  if (id.startsWith('gst-')) return getGuestRecordingById(id);
   const owner = PREFIX_OWNER.find(([prefix]) => id.startsWith(prefix))?.[1];
   if (owner) {
     const hit = getCatalog(owner).find((r) => r.id === id);
