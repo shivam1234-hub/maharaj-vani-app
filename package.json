@@ -24,7 +24,9 @@
     "verses:others": "node scripts/build-verse-others.js",
     "verses:index": "node scripts/build-verse-index.js",
     "verses": "npm run verses:others && npm run verses:index",
-    "stats": "node scripts/catalog-stats.js"
+    "stats": "node scripts/catalog-stats.js",
+    "desktop": "cd desktop && npm run dev",
+    "desktop:dist": "cd desktop && npm run dist"
   },
   "license": "ISC",
   "dependencies": {

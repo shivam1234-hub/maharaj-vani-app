@@ -13,6 +13,13 @@ const { Platform } = require('react-native');
 if (Platform.OS !== 'web') {
   const TrackPlayer = require('react-native-track-player').default;
   TrackPlayer.registerPlaybackService(() => require('./service').default);
+} else {
+  // react-native-web's Alert is a no-op, which would leave every confirmation
+  // dialog dead on the web and Windows builds. Patch it before expo-router
+  // mounts anything that might call it. See utils/webAlert.web.ts.
+  require('./utils/webAlert').installWebAlert();
+  // Scrollbars, focus rings, cursors: desktop chrome the RN styles can't express.
+  require('./utils/desktopStyles').installDesktopStyles();
 }
 
 // Boot Expo Router

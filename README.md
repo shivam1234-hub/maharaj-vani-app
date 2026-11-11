@@ -179,9 +179,10 @@ restarted UI still knows what is playing.
 
 ## Known scope limits
 
-- **Web is not wired up.** `react-native-track-player`'s web shim throws at require-time in the
-  installed alpha, which is why the sibling app carries a separate `AudioContext.web.tsx`. That
-  variant was not ported here; the app targets Android and iOS.
+- **Windows desktop** lives in `desktop/` — an Electron shell over the Expo web export with its
+  own desktop layout (`*.web.tsx` routes, `components/desktop/`). See `desktop/README.md`.
+  `react-native-track-player`'s web shim throws at require-time in the installed alpha, so web
+  uses `contexts/AudioContext.web.tsx` (an `<audio>` element) instead.
 - **No transcripts.** The Prabhupada app's transcript, presentation and slide-sync features are
   backed by Vanisource wikitext, which has no equivalent for these Maharajas.
 - YouTube video is stream-only; offline download applies to the audio archive.

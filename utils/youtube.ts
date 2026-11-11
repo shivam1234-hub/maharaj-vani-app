@@ -1,4 +1,5 @@
 import type { VideoResult } from '../data/types';
+import { httpFetch } from './httpFetch';
 
 /**
  * Keyless YouTube search.
@@ -102,7 +103,7 @@ export async function search(
   const url =
     `https://www.youtube.com/results?search_query=${encodeURIComponent(query)}&hl=en` +
     (opts.newestFirst ? `&sp=${SORT_BY_UPLOAD_DATE}` : '');
-  const res = await fetch(url, {
+  const res = await httpFetch(url, {
     headers: { 'User-Agent': UA, 'Accept-Language': 'en-US,en;q=0.9' },
     signal,
   });
@@ -134,7 +135,7 @@ export async function searchMore(
   continuation: string,
   signal?: AbortSignal,
 ): Promise<SearchPage> {
-  const res = await fetch(`https://www.youtube.com/youtubei/v1/search?key=${apiKey}&prettyPrint=false`, {
+  const res = await httpFetch(`https://www.youtube.com/youtubei/v1/search?key=${apiKey}&prettyPrint=false`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json', 'User-Agent': UA },
     body: JSON.stringify({ context: INNERTUBE_CONTEXT, continuation }),
