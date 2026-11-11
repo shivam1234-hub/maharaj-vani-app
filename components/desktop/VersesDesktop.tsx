@@ -147,7 +147,7 @@ function Tree({ width, sel }: { width: number; sel: Sel }) {
             onSubmitEditing={go}
             placeholder="Go to verse — SB 1.2.6"
             placeholderTextColor={t.textFaint}
-            style={{ flex: 1, color: t.text, fontSize: 13, outlineStyle: 'none', height: 34 } as any}
+            style={{ flex: 1, minWidth: 0, width: 0, color: t.text, fontSize: 13, outlineStyle: 'none', height: 34 } as any}
             autoCorrect={false}
           />
           <IconButton icon="arrow-forward" label="Go" size={26} iconSize={14} onPress={go} />

@@ -140,7 +140,7 @@ function fitColumns(w: number, opts: { speaker?: boolean; category?: boolean }) 
   const category = opts.category !== false && avail - 140 >= 400;
   if (category) avail -= 140;
   const place = avail - 140 >= 440;
-  return { speaker, category, place };
+  return { speaker, category, place, speakerInline: Boolean(opts.speaker) && !speaker };
 }
 
 export function RecordingTable({
@@ -231,7 +231,7 @@ function HeadCell({
 const RecordingRow = React.memo(function RecordingRow({
   rec, index, cols, hideFolder,
 }: {
-  rec: Recording; index: number; cols: { place: boolean; category: boolean; speaker: boolean }; hideFolder?: boolean;
+  rec: Recording; index: number; cols: { place: boolean; category: boolean; speaker: boolean; speakerInline?: boolean }; hideFolder?: boolean;
 }) {
   const t = useTheme();
   const audio = useAudioMeta();
@@ -290,6 +290,9 @@ const RecordingRow = React.memo(function RecordingRow({
             </View>
             <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, marginTop: 3 }}>
               {!cols.category && <Badge text={meta.badge} color={meta.color} />}
+              {cols.speakerInline ? (
+                <Text style={{ color: t.ink(m?.accent ?? t.textSub), fontSize: 11.5, fontWeight: '700' }} numberOfLines={1}>{speakerName(rec)}</Text>
+              ) : null}
               {!hideFolder && rec.breadcrumb.length > 0 ? (
                 <Text style={{ flex: 1, color: t.textDim, fontSize: 11.5 }} numberOfLines={1}>{rec.breadcrumb.join(' › ')}</Text>
               ) : rec.scripture ? (
