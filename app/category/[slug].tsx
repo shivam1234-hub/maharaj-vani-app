@@ -10,6 +10,7 @@ import { useMaharaj } from '../../contexts/MaharajContext';
 import { useDownload } from '../../contexts/DownloadContext';
 import { getCatalog } from '../../hooks/useLectures';
 import { getCategoryMeta } from '../../data/types';
+import { honoured } from '../../data/maharajas';
 
 type Sort = 'newest' | 'oldest' | 'title';
 
@@ -103,7 +104,7 @@ export default function CategoryScreen() {
         <View style={{ flex: 1 }}>
           <Text style={styles.headerTitle}>{meta.label}</Text>
           <Text style={styles.headerSub}>
-            {results.length.toLocaleString()} of {all.length.toLocaleString()} · {maharaj.short}
+            {results.length.toLocaleString()} of {all.length.toLocaleString()} · {honoured(maharaj.short)}
           </Text>
         </View>
         <TouchableOpacity onPress={handleSaveAll} style={styles.saveBtn} hitSlop={6}>

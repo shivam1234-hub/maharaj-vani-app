@@ -1,8 +1,8 @@
 {
   "expo": {
-    "name": "Maharaj Vani",
+    "name": "Vaishnava Vani",
     "slug": "maharaj-vani",
-    "version": "1.8.1",
+    "version": "1.9.2",
     "orientation": "portrait",
     "icon": "./assets/icon.png",
     "userInterfaceStyle": "light",
@@ -30,7 +30,7 @@
     "android": {
       "adaptiveIcon": {
         "foregroundImage": "./assets/adaptive-icon.png",
-        "backgroundColor": "#6A0817"
+        "backgroundColor": "#FEF6DF"
       },
       "package": "com.maharajvani.app",
       "permissions": [

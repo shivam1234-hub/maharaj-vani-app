@@ -44,7 +44,7 @@ export function useGlobalSearch(query: string, limit = 120): GlobalSearchResult 
 
     const hits = getAllCatalogs().filter((r) => matches(r, terms));
 
-    const counts = new Map<MaharajKey, number>();
+    const counts = new Map<string, number>();
     for (const r of hits) counts.set(r.maharaj, (counts.get(r.maharaj) ?? 0) + 1);
 
     const sorted = hits

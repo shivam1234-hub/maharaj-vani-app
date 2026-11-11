@@ -1,6 +1,6 @@
 import React, { useEffect, useRef } from 'react';
 import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
-import { MAHARAJAS, MAHARAJ_ORDER } from '../data/maharajas';
+import { MAHARAJAS, MAHARAJ_ORDER, honoured } from '../data/maharajas';
 import { useMaharaj } from '../contexts/MaharajContext';
 import MaharajAvatar from './MaharajAvatar';
 import { C, R, alpha } from '../constants/theme';
@@ -57,7 +57,7 @@ export default function MaharajSwitch({ compact = false }: { compact?: boolean }
               accessibilityLabel={m.name}
             >
               <View style={[styles.dot, { backgroundColor: on ? m.accent : C.textFaint }]} />
-              <Text style={[styles.pillText, { color: on ? m.accent : C.textDim }]}>{m.short}</Text>
+              <Text style={[styles.pillText, { color: on ? m.accent : C.textDim }]}>{honoured(m.short)}</Text>
             </Pressable>
           );
         }
@@ -80,7 +80,7 @@ export default function MaharajSwitch({ compact = false }: { compact?: boolean }
                 on ? { color: C.text, fontWeight: '800' } : { color: C.textDim },
               ]}
             >
-              {m.short}
+              {honoured(m.short)}
             </Text>
           </Pressable>
         );

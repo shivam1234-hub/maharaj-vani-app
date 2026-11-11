@@ -105,17 +105,57 @@ class MainActivity : ReactActivity() {
   }
 
 
+  /**
+   * Re-reports the window's REAL size every time it is laid out while in PiP.
+   *
+   * The size in the PiP Configuration (screenWidthDp/HeightDp) is not the
+   * space the app actually draws into on every phone: several OEM builds lay
+   * the activity out larger and scale the surface down, and the window keeps
+   * animating after the one-shot mode-change callback. Sizing the player from
+   * that number left part of the floating window black ("half the screen
+   * black"). The decor view's own size is, by definition, the canvas React
+   * Native renders into, so the player is sized from that, and re-sized on
+   * every change until the window settles.
+   */
+  private val pipLayoutListener =
+    android.view.View.OnLayoutChangeListener { v, l, t, r, b, ol, ot, orr, ob ->
+      if ((r - l != orr - ol || b - t != ob - ot) && isInPipNow()) emitDecorSize(true)
+    }
+
+  private fun isInPipNow() =
+    Build.VERSION.SDK_INT >= Build.VERSION_CODES.N && isInPictureInPictureMode
+
+  private fun emitDecorSize(inPip: Boolean) {
+    val decor = window?.decorView ?: return
+    val density = resources.displayMetrics.density
+    PipModule.emitPipChanged(
+      inPip,
+      Math.round(decor.width / density),
+      Math.round(decor.height / density),
+    )
+  }
+
   /** Forwarded to JS so the video screen can drop its chrome in the small window. */
   override fun onPictureInPictureModeChanged(
     isInPictureInPictureMode: Boolean,
     newConfig: Configuration
   ) {
     super.onPictureInPictureModeChanged(isInPictureInPictureMode, newConfig)
-    PipModule.emitPipChanged(
-      isInPictureInPictureMode,
-      newConfig.screenWidthDp,
-      newConfig.screenHeightDp,
-    )
+    val decor = window?.decorView
+    if (isInPictureInPictureMode) {
+      // First report from the config (the decor may not have resized yet),
+      // then the decor's real size as soon as it lays out, and on every
+      // later resize.
+      PipModule.emitPipChanged(true, newConfig.screenWidthDp, newConfig.screenHeightDp)
+      decor?.removeOnLayoutChangeListener(pipLayoutListener)
+      decor?.addOnLayoutChangeListener(pipLayoutListener)
+      decor?.post { if (isInPipNow()) emitDecorSize(true) }
+    } else {
+      decor?.removeOnLayoutChangeListener(pipLayoutListener)
+      // Back to the full screen: portrait again (see PipModule.enterPipOn).
+      PipModule.restoreOrientation(this)
+      PipModule.emitPipChanged(false, newConfig.screenWidthDp, newConfig.screenHeightDp)
+    }
   }
 
   /**

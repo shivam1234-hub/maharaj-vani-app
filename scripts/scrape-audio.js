@@ -1,22 +1,26 @@
 #!/usr/bin/env node
 /**
- * Builds data/catalog-<maharaja>.json — every recording of each Maharaja on
+ * Builds data/catalog-<speaker>.json — every recording of each speaker on
  * audio.iskcondesiretree.com, wherever on the site it lives.
  *
  * Two phases, because their recordings are not all in one place:
  *
- *   Phase 1 — walk the Maharaja's OWN folder tree recursively. Authoritative
+ *   Phase 1 — walk the speaker's OWN folder tree recursively. Authoritative
  *   and complete for that subtree: every file there is theirs regardless of
- *   what it is named.
+ *   what it is named. (Some speakers have no folder of their own; for them
+ *   only phase 2 applies.)
  *
- *   Phase 2 — sweep the rest of the site. A large share of their classes sit
- *   in shared collections (ISKCON Chowpatty yatras/seminars/monthly archives,
- *   ISKCON Mayapur, Bhaktivedanta Manor, Los Angeles, …) alongside other
- *   speakers'. Those are found via the site's own search, which matches
- *   FILENAMES, so it surfaces exactly the files that name the speaker. Each
- *   containing folder is then fetched for real titles and sizes, and only
- *   files whose name identifies this Maharaja are attributed to them — a
- *   folder like `96_-_Yatra` holds many speakers and must not be taken wholesale.
+ *   Phase 2 — the rest of the site. A large share of their classes sit in
+ *   shared collections (ISKCON Chowpatty yatras/seminars/monthly archives,
+ *   ISKCON Mayapur, NVCC Pune, Bhaktivedanta Manor, …) alongside other
+ *   speakers'. Only files whose NAME identifies the speaker are attributed —
+ *   a folder like `96_-_Yatra` holds many speakers and must not be taken
+ *   wholesale.
+ *
+ *   Phase 2 reads scripts/.cache/site-crawl.jsonl (written by
+ *   scripts/crawl-site.js) when it exists: that is every file on the site, so
+ *   nothing depends on the site search finding it. Without the cache it falls
+ *   back to the site search, which matches filenames.
  *
  * Why a recursive folder walk and not the site's playlist endpoint:
  * `index.php?q=p&p=<folder>` returns every mp3 under a folder in one request
@@ -24,20 +28,26 @@
  * Radhanath Swami's 13 subfolders with no error. Folder pages have no cap and
  * additionally carry the display title and file size.
  *
- *   node scripts/scrape-audio.js                 # both, both phases
+ *   node scripts/scrape-audio.js                 # every speaker, both phases
  *   node scripts/scrape-audio.js --only lokanath
  *   node scripts/scrape-audio.js --skip-search   # phase 1 only (fast)
  *   node scripts/scrape-audio.js --concurrency 8
+ *   node scripts/scrape-audio.js --remeta        # no network: re-derive date,
+ *                                                # year, place, category of
+ *                                                # the existing catalogues
  */
 
 const fs = require('fs');
 const path = require('path');
+const {
+  folderUrl, searchUrl, fileUrl, get,
+  parseSubfolders, parseFiles, parseAudioHrefs, titleFromFileName,
+  parseDate, parseYear, parseLocation, parseScripture, classify,
+  makeId, breadcrumbOf,
+} = require('./lib/metadata');
 
 const ROOT = path.join(__dirname, '..');
-const HOST = 'https://audio.iskcondesiretree.com';
-const UA =
-  'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 ' +
-  '(KHTML, like Gecko) Chrome/126.0 Safari/537.36';
+const CRAWL_CACHE = path.join(__dirname, '.cache', 'site-crawl.jsonl');
 
 const argOf = (flag, dflt) => {
   const i = process.argv.indexOf(flag);
@@ -46,17 +56,16 @@ const argOf = (flag, dflt) => {
 const ONLY = argOf('--only', null);
 const CONCURRENCY = Number(argOf('--concurrency', 6));
 const SKIP_SEARCH = process.argv.includes('--skip-search');
+const REMETA = process.argv.includes('--remeta');
 
-// Audio only — the tree also holds .flv/.mp4 festival footage, which this
-// audio app has no player for.
-const AUDIO_EXT = /\.(mp3|m4a|wma|ogg|wav|aac)$/i;
+/** Another speaker's own folder: a Vyasa-puja offering *to* someone there is not theirs. */
+const OTHERS_OWN_FOLDER = /^\/0[234]_-_ISKCON_(Swamis|Prabhujis|Matajis)\/[^/]+\/H(is|er)_(Holiness|Grace)_/;
 
 const SOURCES = [
   {
     key: 'radhanath',
     idPrefix: 'rns',
     name: 'His Holiness Radhanath Swami',
-    short: 'Radhanath Swami',
     // The swami's root, not just /Lectures — the root also holds Bhajans.
     root: '/02_-_ISKCON_Swamis/ISKCON_Swamis_-_R_to_Y/His_Holiness_Radhanath_Swami',
     searchTerms: ['Radhanath', 'Radhanatha', 'RNS'],
@@ -68,70 +77,104 @@ const SOURCES = [
     key: 'gourgovinda',
     idPrefix: 'ggs',
     name: 'His Holiness Gour Govinda Swami',
-    short: 'Gour Govinda Swami',
     // His root, not the English_Lectures subfolder alone: the root also holds
     // Bhajans plus Hindi and Oriya lectures.
     root: '/02_-_ISKCON_Swamis/ISKCON_Swamis_-_D_to_P/His_Holiness_Gour_Govinda_Swami',
     searchTerms: ['Gour_Govinda', 'Gour Govinda', 'Gaura Govinda', 'GGS'],
     namePattern: /(^|[^A-Za-z])(gour[a]?[-_ ]?govinda|ggs)([^A-Za-z]|$)/i,
-  },  {
+  },
+  {
     key: 'lokanath',
     idPrefix: 'lns',
     name: 'His Holiness Lokanath Swami',
-    short: 'Lokanath Swami',
     root: '/02_-_ISKCON_Swamis/ISKCON_Swamis_-_D_to_P/His_Holiness_Lokanath_Swami',
     searchTerms: ['Lokanath', 'Lokanatha', 'LNS'],
     // "Lokanath" alone also names Srila Lokanatha Gosvami (disappearance-day
     // classes by other speakers), so outside his tree the name must be
     // followed by Swami/Maharaj, or be his "LNS" file prefix.
     namePattern: /(^|[^A-Za-z])(lokanatha?[-_ ]+(swami|sw|maharaja?)|lns)([^A-Za-z]|$)/i,
-    // Other speakers' own folders hold Vyasa-puja offerings TO him — theirs, not his.
-    excludePath: /^\/0[23]_-_ISKCON_(Swamis|Prabhujis)\/[^/]+\/His_(Holiness|Grace)_/,
+    excludePath: OTHERS_OWN_FOLDER,
   },
   {
     key: 'bhaktiashraya',
     idPrefix: 'bavs',
     name: 'His Holiness Bhakti Ashraya Vaishnava Swami',
-    short: 'Bhakti Ashraya Vaishnava Swami',
     root: '/02_-_ISKCON_Swamis/ISKCON_Swamis_-_A_to_C/His_Holiness_Bhakti_Ashraya_Vaishnava_Swami',
     searchTerms: ['Ashraya Vaishnava', 'BAVS'],
     namePattern: /(^|[^A-Za-z])(bhakti[-_ ]+ashraya[-_ ]+vaishnava|bavs)([^A-Za-z]|$)/i,
-    excludePath: /^\/0[23]_-_ISKCON_(Swamis|Prabhujis)\/[^/]+\/His_(Holiness|Grace)_/,
+    excludePath: OTHERS_OWN_FOLDER,
+  },
+  {
+    key: 'amarendra',
+    idPrefix: 'amp',
+    name: 'His Grace Amarendra Prabhu',
+    // No folder of his own on the site: every recording sits in a shared
+    // collection (ISKCON Chowpatty, Bhakti Sanga, GEV, …), so only phase 2.
+    root: null,
+    searchTerms: ['Amarendra'],
+    // Not "Amrendra Hari Prabhu" (ISKCON Punjabi Bagh) — a different devotee.
+    namePattern: /(^|[^A-Za-z])amarendra(?![-_ ]*(hari|gaura))([^A-Za-z]|$)/i,
+    excludePath: OTHERS_OWN_FOLDER,
+  },
+  {
+    key: 'radheshyam',
+    idPrefix: 'rsp',
+    name: 'His Grace Radheshyam Prabhu',
+    root: '/03_-_ISKCON_Prabhujis/ISKCON_Prabhujis_-_K_to_R/His_Grace_Radhe_Shyam_Prabhu',
+    searchTerms: ['Radheshyam', 'Radhe Shyam'],
+    // "Radhe Shyam" is also a common bhajan title, so outside his folder the
+    // name has to be followed by Prabhu/Pr/Das, or preceded by HG.
+    namePattern:
+      /(^|[^A-Za-z])((hg[-_ ]+)radhe[-_ ]?shyama?|radhe[-_ ]?shyama?[-_ ]+(prabhu(ji)?|pr|das[a]?))([^A-Za-z]|$)/i,
+    excludePath: OTHERS_OWN_FOLDER,
+  },
+  {
+    key: 'vidvangauranga',
+    idPrefix: 'vgp',
+    name: 'His Grace Vidvan Gauranga Prabhu',
+    root: '/03_-_ISKCON_Prabhujis/ISKCON_Prabhujis_-_S_to_Y/His_Grace_Vidvan_Gauranga_Prabhu',
+    searchTerms: ['Vidvan'],
+    // "Gauranga Prabhu" alone is HG Gauranga Das (Chowpatty/GEV), a different
+    // devotee — "Vidvan" must be there.
+    namePattern: /(^|[^A-Za-z])vidvan[-_ ]*gauranga([^A-Za-z]|$)/i,
+    excludePath: OTHERS_OWN_FOLDER,
+  },
+  {
+    key: 'vamsivadan',
+    idPrefix: 'vvp',
+    name: 'His Grace Vamsi Vadan Prabhu',
+    // No folder of his own; his classes are in ISKCON NVCC Pune, Mayapur,
+    // Vrindavan and Juhu collections.
+    root: null,
+    searchTerms: ['Vamsi Vadan', 'Vamsivadan', 'Vamshi Vadan'],
+    // Must be followed by Pr/Prabhu/Das: "Vamsivadana Thakura" is the
+    // associate of Lord Caitanya whose appearance day is lectured on yearly.
+    namePattern:
+      /(^|[^A-Za-z])vam[s]?h?i[-_ ]?vadana?[-_ ]+(pr|prabhu(ji)?|das[a]?)([^A-Za-z]|$)/i,
+    excludePath: OTHERS_OWN_FOLDER,
+  },
+  {
+    key: 'kartikeya',
+    idPrefix: 'kdp',
+    name: 'His Grace Kartikeya Prabhu',
+    // HG Kartikeya Das, ISKCON Whitefield (Bangalore).
+    root: '/03_-_ISKCON_Prabhujis/ISKCON_Prabhujis_-_K_to_R/His_Grace_Kartikeya_Prabhu',
+    searchTerms: ['Kartikeya'],
+    // Pr/Prabhu/Das required: "Kartikeya" alone is also Lord Siva's son,
+    // the subject of other speakers' classes (SB 4.7).
+    namePattern: /(^|[^A-Za-z])kartikeya[-_ ]+(pr|prabhu(ji)?|das[a]?)([^A-Za-z]|$)/i,
+    excludePath: OTHERS_OWN_FOLDER,
   },
 ];
 
 /**
  * Speakers no longer catalogued, kept only for attribution: a guest class
- * filed inside a catalogued Maharaja's yatra folder but named for one of
+ * filed inside a catalogued speaker's yatra folder but named for one of
  * these must not be listed under the host.
  */
 const ATTRIBUTION_ONLY = [
   { key: 'jayapataka', namePattern: /(^|[^A-Za-z])(jaya?pataka|jps)([^A-Za-z]|$)/i },
 ];
-
-// --------------------------------------------------------------- http
-
-async function get(url, attempts = 4) {
-  for (let i = 0; i < attempts; i++) {
-    try {
-      const res = await fetch(url, {
-        headers: { 'User-Agent': UA, Accept: 'text/html,*/*' },
-        signal: AbortSignal.timeout(180_000),
-      });
-      if (!res.ok) throw new Error(`HTTP ${res.status}`);
-      // Pages are declared iso-8859-1; decode as latin1 so the odd accented
-      // title survives instead of turning into replacement characters.
-      const buf = Buffer.from(await res.arrayBuffer());
-      return buf.toString('latin1');
-    } catch (e) {
-      if (i === attempts - 1) throw e;
-      await new Promise((r) => setTimeout(r, 2000 * (i + 1)));
-    }
-  }
-}
-
-const folderUrl = (p) => `${HOST}/index.php?q=f&f=${encodeURIComponent(p)}`;
-const searchUrl = (t) => `${HOST}/index.php?q=s&sm=ff&s=${encodeURIComponent(t)}`;
 
 /** Run `fn` over `items` with a fixed worker pool, reporting progress. */
 async function pool(items, fn, onTick) {
@@ -152,328 +195,39 @@ async function pool(items, fn, onTick) {
   await Promise.all(workers);
 }
 
-// --------------------------------------------------------------- parsing
-
-function decodeEntities(s) {
-  return s
-    .replace(/&nbsp;/g, ' ')
-    .replace(/&#183;/g, '·')
-    .replace(/&amp;/g, '&')
-    .replace(/&quot;/g, '"')
-    .replace(/&#0?39;/g, "'")
-    .replace(/&lt;/g, '<')
-    .replace(/&gt;/g, '>')
-    .replace(/\s+/g, ' ')
-    .trim();
-}
-
-/** Subfolders strictly one level below `dir` (skips breadcrumb ancestors). */
-function parseSubfolders(html, dir) {
-  const out = new Set();
-  for (const m of html.matchAll(/index\.php\?q=f&f=([^"'&>\s]+)/g)) {
-    let p;
-    try {
-      p = decodeURIComponent(m[1]);
-    } catch {
-      continue;
-    }
-    if (!p.startsWith(dir + '/')) continue;
-    const rest = p.slice(dir.length + 1);
-    if (!rest || rest.includes('/')) continue; // deeper links appear on their own page
-    out.add(p);
-  }
-  return [...out];
-}
-
-/** Audio files listed directly in a folder page. */
-function parseFiles(html) {
-  const out = [];
-  // Each file row begins with its checkbox; slicing on that keeps the href,
-  // title and size of one file together and never straddles two rows.
-  const chunks = html.split('<input type=checkbox name="f[]" value="');
-  for (let i = 1; i < chunks.length; i++) {
-    const chunk = chunks[i];
-    const href = chunk.match(/<a href="(\/[^"]+)"/);
-    if (!href) continue;
-    let filePath;
-    try {
-      filePath = decodeURIComponent(href[1]);
-    } catch {
-      filePath = href[1];
-    }
-    if (!AUDIO_EXT.test(filePath)) continue;
-
-    const titleM = chunk.match(/<font size="2">([^<]*)<\/font>/);
-    const sizeM = chunk.match(/<font size="1" color="aaaaaa">([^<]*)<\/font>/);
-
-    let sizeBytes = 0;
-    let format = (filePath.split('.').pop() || '').toUpperCase();
-    if (sizeM) {
-      const txt = decodeEntities(sizeM[1]);
-      const num = txt.match(/([\d.]+)\s*(KB|MB|GB)/i);
-      if (num) {
-        const v = parseFloat(num[1]);
-        const unit = num[2].toUpperCase();
-        sizeBytes = Math.round(v * (unit === 'GB' ? 1024 ** 3 : unit === 'MB' ? 1024 ** 2 : 1024));
-      }
-      const fmt = txt.split('·').pop()?.trim();
-      if (fmt && /^[A-Z0-9]{2,5}$/i.test(fmt)) format = fmt.toUpperCase();
-    }
-
-    out.push({
-      path: filePath,
-      title: titleM
-        ? decodeEntities(titleM[1])
-        : decodeEntities(filePath.split('/').pop().replace(AUDIO_EXT, '').replace(/_/g, ' ')),
-      sizeBytes,
-      format,
-    });
-  }
-  return out;
-}
-
-/** Every audio path linked anywhere on a page (used for search results). */
-function parseAudioHrefs(html) {
-  const out = new Set();
-  for (const m of html.matchAll(/href="(\/[^"]+)"/g)) {
-    let p;
-    try {
-      p = decodeURIComponent(m[1]);
-    } catch {
-      continue;
-    }
-    if (AUDIO_EXT.test(p)) out.add(p);
-  }
-  return out;
-}
-
-// --------------------------------------------------------------- metadata
-
-const LOCATIONS = [
-  'Mumbai', 'Chowpatty', 'Juhu', 'Mayapur', 'Mayapura', 'Vrindavan', 'Vrindavana',
-  'Radhadesh', 'Pune', 'Delhi', 'New Delhi', 'Kolkata', 'Calcutta', 'Chennai',
-  'Bangalore', 'Ahmedabad', 'Hyderabad', 'Nagpur', 'Surat', 'Jaipur', 'Udupi',
-  'Govardhan', 'Barsana', 'Puri', 'Tirupati', 'Rishikesh', 'Haridwar', 'Amravati',
-  'London', 'Manor', 'Bhaktivedanta Manor', 'Birmingham', 'Leicester', 'Scotland',
-  'Ireland', 'Dublin', 'Paris', 'Germany', 'Berlin', 'Zurich', 'Switzerland',
-  'Italy', 'Rome', 'Spain', 'Sweden', 'Netherlands', 'Amsterdam', 'Belgium',
-  'Russia', 'Moscow', 'Ukraine', 'Kiev', 'Poland', 'Hungary', 'Slovenia', 'Croatia',
-  'New York', 'Los Angeles', 'Chicago', 'Dallas', 'Houston', 'Denver', 'Detroit',
-  'Boston', 'Philadelphia', 'Washington', 'Atlanta', 'Miami', 'Seattle',
-  'San Diego', 'San Francisco', 'Alachua', 'Gita Nagari', 'New Vrindaban',
-  'Toronto', 'Vancouver', 'Montreal', 'Mexico', 'Brazil', 'Argentina', 'Chile',
-  'Peru', 'Colombia', 'Australia', 'Sydney', 'Melbourne', 'Perth', 'Brisbane',
-  'New Zealand', 'Auckland', 'South Africa', 'Durban', 'Johannesburg', 'Cape Town',
-  'Mauritius', 'Kenya', 'Nairobi', 'Dubai', 'Bahrain', 'Kuwait', 'Singapore',
-  'Malaysia', 'Kuala Lumpur', 'Indonesia', 'Bali', 'Thailand', 'Bangkok',
-  'Philippines', 'Manila', 'Hong Kong', 'China', 'Japan', 'Tokyo', 'Sri Lanka',
-  'Colombo', 'Nepal', 'Kathmandu', 'Bangladesh', 'Dhaka', 'Fiji', 'Trinidad',
-  'Guyana', 'Ekachakra', 'Simhachalam', 'Villa Vrindavana', 'Goloka Dhama', 'GEV',
-];
-
-// Longest first so "New Vrindaban" wins over "Vrindavan", "New Delhi" over "Delhi".
-const LOCATION_MATCHERS = LOCATIONS
-  .slice()
-  .sort((a, b) => b.length - a.length)
-  .map((name) => ({
-    name,
-    re: new RegExp(
-      `(?:^|[^A-Za-z])${name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&').replace(/ /g, '[ _-]')}(?:[^A-Za-z]|$)`,
-      'i',
-    ),
-  }));
-
-const MONTHS = {
-  jan: 1, feb: 2, mar: 3, apr: 4, may: 5, jun: 6, jul: 7, aug: 8, sep: 9,
-  sept: 9, oct: 10, nov: 11, dec: 12,
-  january: 1, february: 2, march: 3, april: 4, june: 6, july: 7, august: 8,
-  september: 9, october: 10, november: 11, december: 12,
-};
-
-const THIS_YEAR = new Date().getFullYear();
-
-const iso = (y, m, d) =>
-  y >= 1965 && y <= THIS_YEAR && m >= 1 && m <= 12 && d >= 1 && d <= 31
-    ? `${y}-${String(m).padStart(2, '0')}-${String(d).padStart(2, '0')}`
-    : null;
-
-/** Two-digit years in this corpus are all 1970s-2000s recordings. */
-const expandYear = (yy) => (yy <= THIS_YEAR % 100 ? 2000 + yy : 1900 + yy);
-
-/**
- * Verse references are numerically indistinguishable from dates —
- * "JPS SB 01-05-35" would otherwise read as 1 May 2035 — so they are masked
- * out before any date pattern is tried.
- */
-const SCRIPTURE_REF = /\b(?:BG|SB|CC|NOI|NOD|ISO|BS)\b[- ]*\d{1,3}(?:[.\- ]\d{1,3}){0,3}/gi;
-
-const maskScripture = (s) => s.replace(SCRIPTURE_REF, (m) => ' '.repeat(m.length));
-
-/**
- * Dates appear in several grammars across the trees, e.g.
- * "1989-01-13", "18-04-89", "22_Nov_2007", "Nov_22_2007", "20070122".
- */
-function parseDate(text) {
-  const s = maskScripture(text.replace(/_/g, ' '));
-  let m;
-
-  if ((m = s.match(/(19[6-9]\d|20[0-3]\d)[-. ](\d{1,2})[-. ](\d{1,2})(?!\d)/)))
-    return iso(+m[1], +m[2], +m[3]);
-
-  if ((m = s.match(/(\d{1,2})[-. ](\d{1,2})[-. ](19[6-9]\d|20[0-3]\d)(?!\d)/)))
-    return iso(+m[3], +m[2], +m[1]);
-
-  if ((m = s.match(/(\d{1,2})[-. ]([A-Za-z]{3,9})[-. ](19[6-9]\d|20[0-3]\d)(?!\d)/))) {
-    const mo = MONTHS[m[2].toLowerCase()];
-    if (mo) return iso(+m[3], mo, +m[1]);
-  }
-
-  if ((m = s.match(/([A-Za-z]{3,9})[-. ](\d{1,2})[,-. ]+(19[6-9]\d|20[0-3]\d)(?!\d)/))) {
-    const mo = MONTHS[m[1].toLowerCase()];
-    if (mo) return iso(+m[3], mo, +m[2]);
-  }
-
-  if ((m = s.match(/(\d{1,2})[-. ]([A-Za-z]{3,9})[-. ](\d{2})(?!\d)/))) {
-    const mo = MONTHS[m[2].toLowerCase()];
-    if (mo) return iso(expandYear(+m[3]), mo, +m[1]);
-  }
-
-  // Bare DD-MM-YY, the loosest form — only trusted last.
-  if ((m = s.match(/(?:^|[^\d])(\d{1,2})[-.](\d{1,2})[-.](\d{2})(?!\d)/)))
-    return iso(expandYear(+m[3]), +m[2], +m[1]);
-
-  if ((m = s.match(/(?:^|[^\d])(19[6-9]\d|20[0-3]\d)(\d{2})(\d{2})(?!\d)/)))
-    return iso(+m[1], +m[2], +m[3]);
-
-  return null;
-}
-
-function parseYear(text, date) {
-  if (date) return +date.slice(0, 4);
-  const m = maskScripture(text.replace(/_/g, ' ')).match(/(?:^|[^\d])(19[6-9]\d|20[0-3]\d)(?!\d)/);
-  return m && +m[1] <= THIS_YEAR ? +m[1] : null;
-}
-
-function parseLocation(text) {
-  for (const { name, re } of LOCATION_MATCHERS) if (re.test(text)) return name;
-  return null;
-}
-
-/** "BG-2_47", "SB-07_15_68", "CC Madhya 8.128" -> "BG 2.47" etc. */
-function parseScripture(text) {
-  const s = text.replace(/_/g, ' ');
-  let m;
-  if ((m = s.match(/\b(BG|SB|CC|NOI|NOD|ISO|BS)\b[- ]*((?:\d{1,3})(?:[.\- ]\d{1,3}){0,3})/i)) && m[2]) {
-    const book = m[1].toUpperCase();
-    const ref = m[2]
-      .trim()
-      .replace(/[- ]+/g, '.')
-      .replace(/\.+/g, '.')
-      .split('.')
-      .map((p) => p.replace(/^0+(?=\d)/, ''))
-      .join('.');
-    return `${book} ${ref}`;
-  }
-  if (/\bBhagavad[- ]?gita\b/i.test(s)) return 'BG';
-  if (/\bSrimad[- ]?Bhagavatam\b/i.test(s)) return 'SB';
-  if (/\bCaitanya[- ]?caritamrta\b/i.test(s)) return 'CC';
-  if (/\bRamayana\b/i.test(s)) return 'Ramayana';
-  return null;
-}
-
-/**
- * Coarse bucket used by the category grid. Derived from where the file sits in
- * the tree first (the site's own curation), then from the title.
- */
-function classify(breadcrumb, title) {
-  const crumbs = breadcrumb.join(' / ');
-  const all = `${crumbs} ${title}`;
-
-  if (/Bhajan|Kirtan/i.test(all) && !/Lecture|Class/i.test(all)) return 'Kirtan';
-  if (/Short[_ ]?Clip/i.test(crumbs)) return 'ShortClip';
-  if (/Seminar/i.test(crumbs)) return 'Seminar';
-  if (/Yatra/i.test(crumbs)) return 'Yatra';
-  if (/Ramayana/i.test(all)) return 'Ramayana';
-  if (/Journey[_ ]?Home|Audio[_ ]?Book/i.test(crumbs)) return 'AudioBook';
-  if (/Brihad[_ ]?Bhagavatamrata/i.test(crumbs)) return 'Brihad';
-  if (/Amrit[_ ]?Droplet/i.test(crumbs)) return 'Droplets';
-  if (/Gaura[_ ]?Lila/i.test(crumbs)) return 'GauraLila';
-  if (/Disciple/i.test(crumbs)) return 'Disciples';
-  if (/Bengali/i.test(crumbs)) return 'Bengali';
-  if (/Hindi/i.test(crumbs)) return 'Hindi';
-  if (/Spanish|Italian|Tamil|Malayalam|Thai|Russian|Translation/i.test(crumbs)) return 'Translated';
-  if (/Theme[_ ]?wise/i.test(crumbs)) return 'Theme';
-  if (/Festival|Gaura[_ ]?Poornima|Janmastami|Rath[_ ]?Yatra/i.test(all)) return 'Festival';
-
-  const sc = parseScripture(all);
-  if (sc?.startsWith('BG')) return 'Bhagavad-gita';
-  if (sc?.startsWith('SB')) return 'Srimad-Bhagavatam';
-  if (sc?.startsWith('CC')) return 'CC';
-
-  return 'General';
-}
-
-/**
- * Stable, filesystem-safe id — also the on-disk download folder name and the
- * key for history/favourites, so it must be unique and must never change
- * between scrapes for the same file.
- *
- * The readable slug alone is not unique: collapsing punctuation makes
- * "Rama's_Mercy" and "Rama_s_Mercy" the same string, and the tree does carry
- * such pairs. Every id therefore ends in a hash of the full path.
- */
-function makeId(idPrefix, filePath, root) {
-  const rel = filePath.startsWith(root) ? filePath.slice(root.length) : filePath;
-  const slug = rel
-    .replace(AUDIO_EXT, '')
-    .replace(/[^A-Za-z0-9]+/g, '-')
-    .replace(/^-+|-+$/g, '')
-    .toLowerCase();
-
-  // FNV-1a over the full path — distinct files always get distinct suffixes.
-  let h = 0x811c9dc5;
-  for (let i = 0; i < filePath.length; i++) {
-    h ^= filePath.charCodeAt(i);
-    h = Math.imul(h, 0x01000193) >>> 0;
-  }
-
-  return `${idPrefix}-${slug.slice(0, 80)}-${h.toString(36)}`;
+/** Derived fields only — what --remeta recomputes without the network. */
+function deriveMeta(breadcrumb, fileName, title) {
+  // Folder names carry the year/series ("Devotional Nectar - 1989"), so date
+  // and location searches read the whole path, not just the file name.
+  const crumbs = breadcrumb.join(' ');
+  const date = parseDate(fileName, crumbs) ?? parseDate(crumbs);
+  return {
+    category: classify(breadcrumb, title),
+    date,
+    year: parseYear(`${crumbs} ${fileName}`, date),
+    location: parseLocation(`${title} ${crumbs}`),
+    scripture: parseScripture(`${title} ${fileName}`),
+  };
 }
 
 /** Turn a raw folder-page file entry into a catalogue record. */
 function toRecord(src, f, { external }) {
-  const inRoot = f.path.startsWith(src.root + '/');
-  const rel = inRoot ? f.path.slice(src.root.length + 1) : f.path.slice(1);
-  const segs = rel.split('/');
-  const breadcrumb = segs
-    .slice(0, -1)
-    .map((s) => s.replace(/_/g, ' ').replace(/^\d+\s*-\s*/, '').trim())
-    .filter(Boolean);
-  const fileName = segs[segs.length - 1];
-  // Folder names carry the year/series ("Devotional Nectar - 1989"), so date
-  // and location searches read the whole path, not just the file name.
-  const haystack = `${breadcrumb.join(' ')} ${fileName}`;
-  const date = parseDate(fileName) ?? parseDate(breadcrumb.join(' '));
-
+  const { breadcrumb, fileName } = breadcrumbOf(f.path, src.root);
   return {
     id: makeId(src.idPrefix, f.path, src.root),
     maharaj: src.key,
     title: f.title,
     fullTitle: [...breadcrumb, f.title].join(' / '),
-    url: `${HOST}${f.path.split('/').map(encodeURIComponent).join('/')}`,
+    url: fileUrl(f.path),
     path: f.path,
     folder: breadcrumb[breadcrumb.length - 1] ?? '',
     breadcrumb,
-    category: classify(breadcrumb, f.title),
-    date,
-    year: parseYear(haystack, date),
-    location: parseLocation(`${f.title} ${breadcrumb.join(' ')}`),
-    scripture: parseScripture(`${f.title} ${fileName}`),
+    ...deriveMeta(breadcrumb, fileName, f.title),
     sizeBytes: f.sizeBytes,
     format: f.format,
     sourceUrl: folderUrl(f.path.split('/').slice(0, -1).join('/')),
     // True for recordings found in shared site collections rather than the
-    // Maharaja's own folder — surfaced in the app as their origin collection.
+    // speaker's own folder — surfaced in the app as their origin collection.
     external: external || undefined,
     collection: external ? breadcrumb.slice(0, 2).join(' › ') : undefined,
   };
@@ -481,8 +235,12 @@ function toRecord(src, f, { external }) {
 
 // --------------------------------------------------------------- phase 1
 
-/** Recursive walk of the Maharaja's own subtree. */
+/** Recursive walk of the speaker's own subtree. */
 async function walkOwnTree(src) {
+  if (!src.root) {
+    console.log('  [1/2] no own folder on the site — shared collections only');
+    return [];
+  }
   const seen = new Set([src.root]);
   let frontier = [src.root];
   const files = [];
@@ -510,21 +268,55 @@ async function walkOwnTree(src) {
 
 // --------------------------------------------------------------- phase 2
 
+let crawlCache = null;
+
+/** Every file on the site, from the crawl cache — loaded once for all speakers. */
+function crawledFiles() {
+  if (crawlCache) return crawlCache;
+  crawlCache = [];
+  for (const line of fs.readFileSync(CRAWL_CACHE, 'utf8').split('\n')) {
+    if (!line) continue;
+    try {
+      const { f } = JSON.parse(line);
+      for (const [p, title, sizeBytes] of f) {
+        crawlCache.push({
+          path: p,
+          title: title || titleFromFileName(p.slice(p.lastIndexOf('/') + 1)),
+          sizeBytes,
+          format: (p.split('.').pop() || '').toUpperCase(),
+        });
+      }
+    } catch {
+      // a line cut short by an interrupted crawl
+    }
+  }
+  return crawlCache;
+}
+
+/** Shared-collection files named for this speaker, from the crawl cache. */
+function sweepFromCache(src) {
+  const files = crawledFiles().filter((f) => {
+    if (src.root && f.path.startsWith(src.root + '/')) return false;
+    if (src.excludePath?.test(f.path)) return false;
+    return src.namePattern.test(f.path.slice(f.path.lastIndexOf('/') + 1));
+  });
+  console.log(`  [2/2] crawl cache: ${files.length} files in shared collections`);
+  return files;
+}
+
 /**
- * Find this Maharaja's recordings elsewhere on the site.
- *
- * The site search matches filenames, so it points at the right files; their
- * folders are then fetched to recover proper titles and sizes. Only
- * name-matching files are kept, since these folders are shared with other
- * speakers.
+ * Find this speaker's recordings elsewhere on the site via the site search,
+ * which matches filenames; their folders are then fetched to recover proper
+ * titles and sizes. Only name-matching files are kept, since these folders
+ * are shared with other speakers.
  */
-async function sweepRestOfSite(src) {
+async function sweepViaSearch(src) {
   const candidates = new Set();
   for (const term of src.searchTerms) {
     try {
       const html = await get(searchUrl(term));
       for (const p of parseAudioHrefs(html)) {
-        if (p.startsWith(src.root + '/')) continue;
+        if (src.root && p.startsWith(src.root + '/')) continue;
         if (src.excludePath?.test(p)) continue;
         candidates.add(p);
       }
@@ -537,18 +329,14 @@ async function sweepRestOfSite(src) {
 
   const folders = [...new Set([...candidates].map((p) => p.slice(0, p.lastIndexOf('/'))))];
   const files = [];
-  let done = 0;
 
   await pool(folders, async (dir) => {
     const html = await get(folderUrl(dir));
     for (const f of parseFiles(html)) {
-      // A shared folder holds many speakers; the filename is the only
-      // reliable attribution outside the Maharaja's own tree.
       const fileName = f.path.slice(f.path.lastIndexOf('/') + 1);
       if (src.namePattern.test(fileName)) files.push(f);
     }
-  }, (d) => {
-    done = d;
+  }, (done) => {
     process.stdout.write(`\r  [2/2] sweeping shared folders: ${done}/${folders.length}, ${files.length} files      `);
   });
 
@@ -562,18 +350,19 @@ async function scrapeSource(src) {
   console.log(`\n${src.name}`);
 
   const own = await walkOwnTree(src);
-  const outside = SKIP_SEARCH ? [] : await sweepRestOfSite(src);
+  let outside = [];
+  if (!SKIP_SEARCH) outside = fs.existsSync(CRAWL_CACHE) ? sweepFromCache(src) : await sweepViaSearch(src);
 
   // Two folders occasionally link the same file, and a search hit can also
   // sit inside the own tree — dedupe on path, preferring the own-tree entry.
   const byPath = new Map();
   for (const f of own) {
-    // A Maharaja's own tree is not exclusively his: yatra and festival folders
-    // carry guest speakers' classes filed under the host's collection. Where
-    // the filename names a DIFFERENT Maharaja we track, it belongs to them —
-    // their own phase-2 sweep finds it, because the site search matches
-    // filenames. Without this, a Jayapataka Swami class recorded on a
-    // Radhanath Swami yatra was listed under Radhanath Swami.
+    // A speaker's own tree is not exclusively theirs: yatra and festival
+    // folders carry guest speakers' classes filed under the host's
+    // collection. Where the filename names a DIFFERENT speaker we track, it
+    // belongs to them — their own phase 2 finds it. Without this, a
+    // Jayapataka Swami class recorded on a Radhanath Swami yatra was listed
+    // under Radhanath Swami.
     const fileName = f.path.slice(f.path.lastIndexOf('/') + 1);
     if (!src.namePattern.test(fileName)) {
       const other = [...SOURCES, ...ATTRIBUTION_ONLY].find(
@@ -600,6 +389,22 @@ async function scrapeSource(src) {
   return records;
 }
 
+/** --remeta: recompute derived fields of an existing catalogue in place. */
+function remeta(src, records) {
+  let changed = 0;
+  for (const r of records) {
+    const fileName = r.path.slice(r.path.lastIndexOf('/') + 1);
+    const next = deriveMeta(r.breadcrumb, fileName, r.title);
+    if (next.date !== r.date || next.year !== r.year) changed++;
+    Object.assign(r, next);
+  }
+  records.sort(
+    (a, b) => (b.date ?? '').localeCompare(a.date ?? '') || a.title.localeCompare(b.title),
+  );
+  console.log(`${src.key}: ${changed} of ${records.length} records re-dated`);
+  return records;
+}
+
 // --------------------------------------------------------------- main
 
 (async () => {
@@ -611,21 +416,26 @@ async function scrapeSource(src) {
 
   const dataDir = path.join(ROOT, 'data');
   fs.mkdirSync(dataDir, { recursive: true });
+  const fileOf = (k) => path.join(dataDir, `catalog-${k}.json`);
 
   const out = {};
-  for (const src of sources) out[src.key] = await scrapeSource(src);
+  for (const src of sources) {
+    if (REMETA) {
+      if (fs.existsSync(fileOf(src.key)))
+        out[src.key] = remeta(src, JSON.parse(fs.readFileSync(fileOf(src.key), 'utf8')));
+    } else {
+      out[src.key] = await scrapeSource(src);
+    }
+  }
 
-  // One file per Maharaja rather than one combined blob: the app lazily parses
+  // One file per speaker rather than one combined blob: the app lazily parses
   // only the catalogue being browsed, which keeps ~10 MB of JSON off the
   // startup path. A partial run (--only) rewrites only its own file.
-  for (const [k, recs] of Object.entries(out)) {
-    fs.writeFileSync(path.join(dataDir, `catalog-${k}.json`), JSON.stringify(recs));
-  }
+  for (const [k, recs] of Object.entries(out)) fs.writeFileSync(fileOf(k), JSON.stringify(recs));
 
   const merged = {};
   for (const src of SOURCES) {
-    const f = path.join(dataDir, `catalog-${src.key}.json`);
-    if (fs.existsSync(f)) merged[src.key] = JSON.parse(fs.readFileSync(f, 'utf8'));
+    if (fs.existsSync(fileOf(src.key))) merged[src.key] = JSON.parse(fs.readFileSync(fileOf(src.key), 'utf8'));
   }
 
   fs.writeFileSync(
@@ -656,8 +466,7 @@ async function scrapeSource(src) {
       '  ' + Object.entries(cats).sort((a, b) => b[1] - a[1]).map(([c, n]) => `${c}:${n}`).join('  '),
     );
   }
-  for (const k of Object.keys(merged)) {
-    const f = path.join(dataDir, `catalog-${k}.json`);
-    console.log(`wrote data/catalog-${k}.json (${(fs.statSync(f).size / 1024 ** 2).toFixed(1)} MB)`);
+  for (const k of Object.keys(out)) {
+    console.log(`wrote data/catalog-${k}.json (${(fs.statSync(fileOf(k)).size / 1024 ** 2).toFixed(1)} MB)`);
   }
 })();

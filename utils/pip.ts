@@ -22,6 +22,7 @@ const Pip = NativeModules.PipModule as
       isAllowed: () => boolean;
       openSettings: () => void;
       setPlaying: (isPlaying: boolean) => void;
+  getState?: () => { inPip: boolean; width: number; height: number };
     }
   | undefined;
 
@@ -124,6 +125,18 @@ export function onPipModeChanged(cb: (state: PipState) => void): () => void {
     });
   });
   return () => sub.remove();
+}
+
+/** Asks the activity directly; see PipModule.getState. */
+export function getPipState(): PipState | null {
+  if (Platform.OS !== 'android') return null;
+  try {
+    const e = Pip?.getState?.();
+    if (!e) return null;
+    return { inPip: !!e.inPip, width: Number(e.width) || 0, height: Number(e.height) || 0 };
+  } catch {
+    return null;
+  }
 }
 
 /**

@@ -4,12 +4,12 @@ import { Ionicons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { router, usePathname } from 'expo-router';
 import { useAudio } from '../contexts/AudioContext';
-import { MAHARAJAS } from '../data/maharajas';
+import { maharajOf, speakerName } from '../data/maharajas';
 import MaharajAvatar from './MaharajAvatar';
 import { C, R, shadow } from '../constants/theme';
 
 const TAB_BAR_HEIGHT = 64;
-const TAB_ROUTES = new Set(['/', '/browse', '/youtube', '/downloads', '/history']);
+const TAB_ROUTES = new Set(['/', '/verses', '/browse', '/youtube', '/downloads', '/history']);
 
 export default function MiniPlayer() {
   const audio = useAudio();
@@ -22,7 +22,7 @@ export default function MiniPlayer() {
   // transport: a second set of controls floating over them only got in the way.
   if (pathname.startsWith('/lecture/') || pathname.startsWith('/video/')) return null;
 
-  const maharaj = MAHARAJAS[rec.maharaj];
+  const maharaj = maharajOf(rec.maharaj);
   const accent = maharaj?.accent ?? '#FF7722';
   const progress = audio.durationMs > 0 ? Math.min(audio.positionMs / audio.durationMs, 1) : 0;
   // Above the tab bar on tab screens; near the bottom edge on stack screens,
@@ -41,7 +41,7 @@ export default function MiniPlayer() {
           <Text style={styles.title} numberOfLines={1}>{rec.title}</Text>
           <Text style={styles.meta} numberOfLines={1}>
             {audio.offline ? 'Offline · ' : ''}
-            {maharaj?.short ?? rec.folder}
+            {speakerName(rec)}
           </Text>
         </View>
 
@@ -60,6 +60,12 @@ export default function MiniPlayer() {
             style={audio.isPlaying ? undefined : { marginLeft: 2 }}
           />
         </TouchableOpacity>
+        {/* In a "play chapter in sequence" queue, step to the next verse's lecture. */}
+        {audio.queueLength > 1 && audio.queueIndex < audio.queueLength - 1 ? (
+          <TouchableOpacity onPress={audio.skipToNext} style={styles.iconBtn} hitSlop={4} accessibilityLabel="Next lecture">
+            <Ionicons name="play-skip-forward" size={17} color={C.textSub} />
+          </TouchableOpacity>
+        ) : null}
         <TouchableOpacity onPress={audio.stop} style={styles.iconBtn} hitSlop={4}>
           <Ionicons name="close" size={19} color={C.textDim} />
         </TouchableOpacity>

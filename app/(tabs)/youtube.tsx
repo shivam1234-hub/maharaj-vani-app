@@ -9,6 +9,7 @@ import MaharajSwitch from '../../components/MaharajSwitch';
 import VideoCard from '../../components/VideoCard';
 import { useMaharaj } from '../../contexts/MaharajContext';
 import { useYouTube } from '../../hooks/useYouTube';
+import { honoured } from '../../data/maharajas';
 
 /**
  * Live YouTube search, scoped to the active Maharaja. This is the second half
@@ -44,7 +45,7 @@ export default function YouTubeScreen() {
       <SearchBar
         value={query}
         onChange={setQuery}
-        placeholder={`Search ${maharaj.short} on YouTube…`}
+        placeholder={`Search ${honoured(maharaj.short)} on YouTube…`}
       />
 
       {/* A horizontal ScrollView, deliberately NOT a horizontal FlatList: the

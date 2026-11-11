@@ -16,6 +16,7 @@ import { useLibrary } from '../../contexts/LibraryContext';
 import { getCatalog, getRecordingById } from '../../hooks/useLectures';
 import { formatBytes, formatRecordingDate, getCategoryMeta } from '../../data/types';
 import { C, R, alpha } from '../../constants/theme';
+import { respectful } from '../../data/maharajas';
 
 export default function HomeScreen() {
   const { maharaj, active } = useMaharaj();
@@ -81,7 +82,7 @@ export default function HomeScreen() {
       <View style={styles.header}>
         <View style={{ flex: 1 }}>
           <Text style={styles.greeting}>Hare Krishna</Text>
-          <Text style={styles.appTitle}>Maharaj Vani</Text>
+          <Text style={styles.appTitle}>Vaishnava Vani</Text>
         </View>
         <Pressable
           onPress={() => router.push('/global-search')}
@@ -107,8 +108,8 @@ export default function HomeScreen() {
         <View style={styles.heroTop}>
           <MaharajAvatar maharaj={maharaj} size={58} />
           <View style={{ flex: 1 }}>
-            <Text style={styles.heroHH}>His Holiness</Text>
-            <Text style={styles.heroName}>{maharaj.short}</Text>
+            <Text style={styles.heroHH}>{maharaj.honorific}</Text>
+            <Text style={styles.heroName}>{respectful(maharaj.short)}</Text>
           </View>
         </View>
 
@@ -214,7 +215,22 @@ export default function HomeScreen() {
         </View>
         <View style={{ flex: 1 }}>
           <Text style={styles.globalTitle}>Search everything</Text>
-          <Text style={styles.globalSub}>All Maharajas · archive audio + YouTube</Text>
+          <Text style={styles.globalSub}>All speakers · archive audio + YouTube</Text>
+        </View>
+        <Ionicons name="arrow-forward" size={18} color={C.textFaint} />
+      </Pressable>
+
+      {/* Verse-by-verse lectures across every speaker. */}
+      <Pressable
+        onPress={() => router.push('/verses')}
+        style={({ pressed }) => [styles.globalBtn, pressed && styles.pressed]}
+      >
+        <View style={[styles.globalIcon, { backgroundColor: '#FF7722' + alpha(0.16) }]}>
+          <Ionicons name="book" size={19} color="#FF7722" />
+        </View>
+        <View style={{ flex: 1 }}>
+          <Text style={styles.globalTitle}>Verse by verse</Text>
+          <Text style={styles.globalSub}>Bhagavad-gita · Bhagavatam · Caitanya-caritamrta, in sequence</Text>
         </View>
         <Ionicons name="arrow-forward" size={18} color={C.textFaint} />
       </Pressable>
