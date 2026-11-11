@@ -94,6 +94,8 @@ export default function RootLayout() {
                       <Stack.Screen name="shastra/[book]" options={{ headerBackTitle: 'Back' }} />
                       <Stack.Screen name="shastra/chapter" options={{ headerBackTitle: 'Back' }} />
                       <Stack.Screen name="shastra/verse" options={{ headerBackTitle: 'Back' }} />
+                      <Stack.Screen name="songs/index" options={{ title: 'Prayers & Songs', headerBackTitle: 'Back' }} />
+                      <Stack.Screen name="songs/[id]" options={{ headerBackTitle: 'Back' }} />
                       <Stack.Screen
                         name="video/[id]"
                         options={{ title: 'Video', headerBackTitle: 'Back' }}

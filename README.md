@@ -69,9 +69,12 @@ cap, and folder pages additionally carry the display title and file size the pla
 
 ## Verses tab — every shloka, in sequence
 
-Bhagavad-gita (657 verse units), Srimad-Bhagavatam (all 12 cantos, 13,000) and
-Caitanya-caritamrta (11,359), chapter by chapter in order, with Srila Prabhupada's translation of
-each verse. Joined verses (BG 1.16-18) are one unit, as Vedabase prints them.
+Bhagavad-gita (657 verse units), Srimad-Bhagavatam (all 12 cantos, 13,000),
+Caitanya-caritamrta (11,359), The Nectar of Instruction (11 texts), Brahma-samhita (62 verses)
+and Sri Isopanisad (Invocation + 18 mantras), chapter by chapter in order, with Srila Prabhupada's
+translation of each verse. Joined verses (BG 1.16-18) are one unit, as Vedabase prints them.
+The Nectar of Devotion is prose, so it is followed **chapter by chapter** (Introduction + 51
+chapters): each chapter lists its lectures, plays them in a queue, and searches YouTube.
 
 - **Book → canto/lila → chapter → verse.** Chapter rows show how many verses have lectures.
 - **Each verse** lists every lecture on it, in tiers: the chosen speaker, the other catalogued
@@ -82,11 +85,29 @@ each verse. Joined verses (BG 1.16-18) are one unit, as Vedabase prints them.
 - **Play chapter in sequence** queues one lecture per verse, in verse order — the chosen
   speaker's where they spoke on it, otherwise another Maharaja's. The queue keeps playing with the
   app closed, and the notification's next button steps to the next verse.
-- **Go to verse** accepts "SB 1.2.6", "BG 2.47", "CC Madhya 20.108", "SB 10.14" or just "2.47".
+- **Go to verse** accepts "SB 1.2.6", "BG 2.47", "CC Madhya 20.108", "SB 10.14", "NOI 5",
+  "Bs 5.29", "Iso 7", "Iso Invocation", "NOD 12" or just "2.47".
+- The one-chapter books (NOI, Bs, Iso) open straight onto their verses; a talk on the book as a
+  whole ("Nectar of Instruction Seminar Day 1") is listed as "On the whole book".
 
 Verses with at least one lecture (counting classes on a range for each verse in it):
-BG 100%, SB 99.9%, CC 96.9%. The remaining CC verses (mostly Antya-lila) have no lecture on the
+BG 100%, SB 99.9%, CC 96.9%, NOI / Bs / Iso 100%; NOD chapters 50 of 52. The remaining CC verses (mostly Antya-lila) have no lecture on the
 archive; their pages fall back to the live YouTube search.
+
+## Prayers & Songs
+
+A section of the Verses tab with lectures *explaining* the prayers and songs: Mangalacarana and the
+pranamas, Gurvastakam, Siksastakam, Damodarastakam and the other astakas, the songs of Bhaktivinoda
+Thakura and Narottama dasa Thakura, and the great prayers of the Bhagavatam (Kunti, Bhisma,
+Prahlada, Gajendra, Brahma, Gopi-gita …) — 78 entries, grouped, searchable.
+
+- The catalogue is `utils/songs.js`, shared by the build script and the app: each entry's author,
+  opening line, and the spellings its lectures go by. A match followed by Pr/Prabhu/Das/Mataji is a
+  devotee's name ("Shikshastakam Prabhu"), not the song.
+- Recordings of a song being *sung* (kirtan, bhajan albums, recitations) are left out unless the
+  title says it is explained (purport, meaning, class, seminar…).
+- Each song lists its lectures in the same tiers as a verse, plays them all in a queue, and runs
+  a live YouTube search filtered to explanation videos naming that song.
 
 ## Tabs
 
@@ -111,13 +132,15 @@ npm run scrape:gourgovinda
 npm run stats               # coverage + metadata sanity check
 npm run scrape -- --remeta  # no network: re-derive dates/places/categories of existing catalogues
 
-npm run verses:table        # every verse of BG/SB/CC in order (vedabase.io) → data/verse-table.json
-npm run verses:text         # verse translations → data/shastra/text-{BG,SB,CC}.json
+npm run verses:table        # every verse of BG/SB/CC/NOI/BS/ISO + NOD chapters (vedabase.io) → data/verse-table.json
+npm run verses:table -- --only NOI,NOD,BS,ISO   # just some books, merged into the existing table
+npm run verses:text         # verse translations → data/shastra/text-{BG,SB,CC,NOI,ISO,BS}.json
 npm run verses:youtube      # catalogued speakers' verse videos → data/verse-youtube.json
-npm run verses              # other speakers from the crawl + build data/verse-index/*.json
+npm run verses              # other speakers from the crawl + data/verse-index/*.json + data/song-index.json
+npm run crawl -- --roots /01_-_Srila_Prabhupada/01_-_Lectures   # add Srila Prabhupada's lectures to the crawl
 ```
 
-The verse index is sharded — BG, one file per SB canto, CC, each ≤2 MB — and the app parses a
+The verse index is sharded — BG, one file per SB canto, CC, NOI, NOD, BS, ISO, each ≤2 MB — and the app parses a
 shard only when a chapter in it is opened. Other speakers' recordings have no catalogue; their
 ids (`gst-<shard>-…`) are derived from the path, so downloads, history and favourites work for
 them too. To keep the bundle reasonable, other Maharajas are capped at 25 lectures per verse

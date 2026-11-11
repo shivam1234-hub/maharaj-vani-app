@@ -11,10 +11,20 @@ import { formatRecordingDate } from '../data/types';
 import { recordingOf } from '../hooks/useVerses';
 import { C, R, alpha } from '../constants/theme';
 
+/** Shards of the one-chapter books, where a chapter talk is on the whole book. */
+const SINGLE_CHAPTER_SHARDS = new Set(['noi', 'iso', 'bs']);
+
 /** "16–18" when a lecture spans verses, so a range class is recognisable. */
 function rangeLabel(l: VerseAudio): string | null {
-  if (l.from == null) return 'Whole chapter';
-  return l.to != null && l.to !== l.from ? `Verses ${l.from}–${l.to}` : null;
+  if (l.from == null) {
+    // The Nectar of Devotion is followed chapter by chapter: every talk is a chapter talk.
+    if (l.shard === 'nod' || l.shard === 'song') return null;
+    return SINGLE_CHAPTER_SHARDS.has(l.shard) ? 'Whole book' : 'Whole chapter';
+  }
+  // The Isopanisad Invocation is verse 0.
+  const from = l.from === 0 ? 'Invocation' : String(l.from);
+  if (l.to != null && l.to !== l.from) return `Verses ${from}–${l.to}`;
+  return l.from === 0 ? 'Invocation' : null;
 }
 
 function dateLabel(d: string): string {

@@ -1,11 +1,11 @@
-export type BookKey = 'BG' | 'SB' | 'CC';
+export type BookKey = 'BG' | 'SB' | 'CC' | 'NOI' | 'NOD' | 'BS' | 'ISO';
 
 export interface VerseRef {
   book: BookKey;
-  /** '' for BG, canto number for SB ("10"), lila for CC ("madhya"). */
+  /** '' for BG and the smaller books, canto number for SB ("10"), lila for CC ("madhya"). */
   part: string;
   chapter: number;
-  /** null for a chapter-level talk ("SB 9.20"). */
+  /** null for a chapter-level talk ("SB 9.20"). 0 is the Isopanisad Invocation. */
   from: number | null;
   to: number | null;
 }

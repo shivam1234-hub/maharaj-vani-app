@@ -1,7 +1,8 @@
 #!/usr/bin/env node
 /**
- * Builds data/verse-index/{BG,SB-1..SB-12,CC}.json — for every BG / SB / CC verse, the lectures on
- * it: archive audio and YouTube, from the catalogued Maharajas and Prabhujis,
+ * Builds data/verse-index/{BG,SB-1..SB-12,CC,NOI,NOD,BS,ISO}.json — for every verse of
+ * BG / SB / CC / NOI / BS / ISO, and every chapter of NOD, the lectures on it:
+ * archive audio and YouTube, from the catalogued Maharajas and Prabhujis,
  * plus other speakers as a fallback.
  *
  * Inputs (all produced by other scripts, so this one is offline and fast):
@@ -22,7 +23,7 @@
  *             derives it from the path (utils/archiveId.js). Their title is
  *             null when it is just the file name, which the app rebuilds.
  *   video:    [speaker, videoId, title, durationSec, channel, refs][]
- *   refs:     "SB/10/4:3-5|BG//2:47" — chapter key, then verse range ("" = whole chapter)
+ *   refs:     "SB/10/4:3-5|BG//2:47|NOD//16:" — chapter key, then verse range ("" = whole chapter)
  *
  *   node scripts/build-verse-index.js
  */
@@ -31,6 +32,7 @@ const fs = require('fs');
 const path = require('path');
 const { parseVerseRefs, chapterKey, entryStart, entryEnd } = require('../utils/verseRef');
 const { archiveTitle } = require('../utils/archiveId');
+const { SPELLING } = require('./lib/speaker');
 
 const DATA = path.join(__dirname, '..', 'data');
 const read = (f) => JSON.parse(fs.readFileSync(path.join(DATA, f), 'utf8'));
@@ -54,17 +56,21 @@ const MAHARAJAS_PER_VERSE = 25;
 const MAHARAJAS_PER_CHAPTER_TALK = 10;
 const FILL_PER_VERSE = 12;
 const FILL_PER_CHAPTER_TALK = 6;
+/** Prose books, followed chapter by chapter: a chapter talk is their unit, so it gets the verse caps. */
+const PROSE = new Set(['NOD']);
 
 // ------------------------------------------------------------ verse table
 
 const table = read('verse-table.json');
-/** chapterKey -> { max, entries } for validation. */
+/** chapterKey -> { min, max, entries } for validation. */
 const chapters = new Map();
 for (const book of table.books) {
   for (const part of book.parts) {
     for (const ch of part.chapters) {
       const max = ch.verses.reduce((m, e) => Math.max(m, entryEnd(e)), 0);
-      chapters.set(chapterKey(book.key, part.key, ch.n), { max, entries: ch.verses });
+      // 1, except the Isopanisad, whose Invocation is verse 0.
+      const min = ch.verses.length ? Math.min(...ch.verses.map(entryStart)) : 1;
+      chapters.set(chapterKey(book.key, part.key, ch.n), { min, max, entries: ch.verses });
     }
   }
 }
@@ -80,7 +86,7 @@ function validRefs(refs) {
     let enc;
     if (r.from == null) enc = `${key}:`;
     else {
-      if (r.from < 1 || r.from > ch.max) continue;
+      if (r.from < ch.min || r.from > ch.max) continue;
       const to = Math.min(r.to ?? r.from, ch.max);
       enc = to > r.from ? `${key}:${r.from}-${to}` : `${key}:${r.from}`;
     }
@@ -147,7 +153,8 @@ for (const key of CATALOGUED) {
 // 2. Catalogued speakers' YouTube.
 if (fs.existsSync(path.join(DATA, 'verse-youtube.json'))) {
   for (const v of read('verse-youtube.json')) {
-    const refs = validRefs(v.refs ?? parseVerseRefs(v.title));
+    // Stored refs predate the smaller books; re-reading the title picks those up.
+    const refs = validRefs([...(v.refs ?? []), ...parseVerseRefs(v.title)]);
     if (!refs.length || !speakerIdx.has(v.speaker)) continue;
     video.push([speakerIdx.get(v.speaker), v.videoId, v.title, v.durationSec ?? 0, v.channel ?? '', refs.join('|')]);
     bump(v.speaker, 'video');
@@ -155,15 +162,6 @@ if (fs.existsSync(path.join(DATA, 'verse-youtube.json'))) {
 }
 
 // 3. Other speakers' audio: all Maharajas + Prabhupada, Prabhujis as top-up.
-const SPELLING = {
-  'Prahladananada Swami': 'Prahladananda Swami',
-  'Bhakti Vigna Vinasa Narsimha Swami': 'Bhakti Vigna Vinasa Narasimha Swami',
-  'Bhakti Prabhupada Vrata Damodar Swami': 'Bhakti Prabhupada Vrata Damodara Swami',
-  'Bhakti Prabhupada Vrat Damodar Swami': 'Bhakti Prabhupada Vrata Damodara Swami',
-  'Bhakti Prabhupada Vrata Domadar Swami': 'Bhakti Prabhupada Vrata Damodara Swami',
-  'Bhakti Aryava Priti Vardhana Swami': 'Bhakti Arjava Priti Vardhana Swami',
-  'Bhakti Padma Saurabh Pracahrak Swami': 'Bhakti Padma Saurabh Pracharak Swami',
-};
 const CATALOGUED_NAME =
   /radhanath|lokanath|ashraya\s*vaishnava|gou?ra?\s*govinda|radhe\s*shyam|^amarendra(?!\s*hari)|vidvan\s*gauranga|vam(s|sh)?i\s*vadan|^kartikeya\s+prabhu/i;
 const OTHERS_RAW = path.join(__dirname, '.cache', 'verse-others-raw.json');
@@ -197,7 +195,8 @@ if (fs.existsSync(OTHERS_RAW)) {
 
   const dirIdx = new Map();
   for (const [bucket, list] of buckets) {
-    const fill = bucket.endsWith(':') ? FILL_PER_CHAPTER_TALK : FILL_PER_VERSE;
+    const chapterTalk = bucket.endsWith(':') && !PROSE.has(bucket.split('/')[0]);
+    const fill = chapterTalk ? FILL_PER_CHAPTER_TALK : FILL_PER_VERSE;
     // Lectures in a language other than English/Hindi sort last within a tier.
     const foreign = (r) =>
       /Russian|rus_|Spanish|Espanol|Portug|Italian|Slovenian|Slovenski|German|French|Polish|Hungarian|Czech|Chinese|Persian|Thai|Ukrain|Latvian|Lithuan/i.test(
@@ -217,7 +216,7 @@ if (fs.existsSync(OTHERS_RAW)) {
       }
     };
     const picked = [];
-    roundRobin(byTier(1), picked, bucket.endsWith(':') ? MAHARAJAS_PER_CHAPTER_TALK : MAHARAJAS_PER_VERSE);
+    roundRobin(byTier(1), picked, chapterTalk ? MAHARAJAS_PER_CHAPTER_TALK : MAHARAJAS_PER_VERSE);
     picked.push(...byTier(2)); // Srila Prabhupada: always all of them
     roundRobin(byTier(3), picked, Math.max(fill, picked.length));
     for (const r of picked) {
@@ -265,7 +264,7 @@ const out = {
  * app loads a shard the first time it is opened, so reading one canto never
  * pays for the whole ~10 MB Bhagavatam index.
  */
-const SHARDS = ['BG', ...Array.from({ length: 12 }, (_, i) => `SB/${i + 1}`), 'CC'];
+const SHARDS = ['BG', ...Array.from({ length: 12 }, (_, i) => `SB/${i + 1}`), 'CC', 'NOI', 'NOD', 'BS', 'ISO'];
 const OUTS = [];
 fs.mkdirSync(path.join(DATA, 'verse-index'), { recursive: true });
 for (const book of SHARDS) {
@@ -316,25 +315,33 @@ for (const legacy of ['verse-index.json', 'verse-index-BG.json', 'verse-index-SB
 
 // ------------------------------------------------------------ coverage report
 
-const covered = { BG: new Set(), SB: new Set(), CC: new Set() };
-const total = { BG: 0, SB: 0, CC: 0 };
+/** Per book: verse entries (chapters, for a prose book) with at least one lecture. */
+const covered = {};
+const total = {};
 for (const [key, ch] of chapters) {
   const book = key.split('/')[0];
-  total[book] += ch.entries.length;
+  covered[book] = covered[book] ?? new Set();
+  total[book] = (total[book] ?? 0) + (PROSE.has(book) ? 1 : ch.entries.length);
 }
 for (const row of [...audio.map((a) => a[4]), ...video.map((v) => v[5])]) {
   for (const enc of row.split('|')) {
     const [key, range] = enc.split(':');
+    const book = key.split('/')[0];
+    if (PROSE.has(book)) {
+      covered[book].add(key);
+      continue;
+    }
     if (!range) continue;
     const [a, b] = range.split('-').map(Number);
-    for (let v = a; v <= (b || a); v++) covered[key.split('/')[0]].add(`${key}:${entryOf(key, v)}`);
+    for (let v = a; v <= (b || a); v++) covered[book].add(`${key}:${entryOf(key, v)}`);
   }
 }
 
 console.log('per speaker:', stats);
-for (const b of ['BG', 'SB', 'CC']) {
+for (const b of Object.keys(total)) {
+  const unit = PROSE.has(b) ? 'chapters' : 'verse entries';
   console.log(
-    `${b}: ${covered[b].size}/${total[b]} verse entries have at least one lecture ` +
+    `${b}: ${covered[b].size}/${total[b]} ${unit} have at least one lecture ` +
       `(${((covered[b].size / total[b]) * 100).toFixed(1)}%)`,
   );
 }

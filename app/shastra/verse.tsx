@@ -9,13 +9,12 @@ import VideoCard from '../../components/VideoCard';
 import { useSettings } from '../../contexts/SettingsContext';
 import { MAHARAJAS, honoured } from '../../data/maharajas';
 import {
-  TIER_LABEL, adjacentVerse, getChapter, vedabaseUrl, verseLabel, verseTranslation,
+  TIER_LABEL, adjacentVerse, getChapter, isSingleChapter, vedabaseUrl, verseLabel, verseTranslation,
   type SpeakerTier, type VerseAudio, type VerseVideo,
 } from '../../data/verseIndex';
-import type { VideoResult } from '../../data/types';
 import { lecturesForVerse, rememberPlace, useVerseSpeaker } from '../../hooks/useVerses';
-import { search } from '../../utils/youtube';
-import { entryEnd, entryStart, parseVerseRefs, type BookKey } from '../../utils/verseRef';
+import { useLiveVerseVideos, verseVideoResult } from '../../hooks/useLiveVerseVideos';
+import type { BookKey } from '../../utils/verseRef';
 import { BOOK_META, chapterHref, verseHref } from '../../utils/shastraNav';
 import { C, R, alpha } from '../../constants/theme';
 
@@ -23,13 +22,6 @@ const TIERS: SpeakerTier[] = [0, 1, 2, 3];
 /** Rows shown per tier before "Show all". */
 const FOLD = 6;
 
-const toVideo = (v: VerseVideo): VideoResult => ({
-  videoId: v.videoId,
-  title: v.title,
-  channel: v.channel,
-  durationSec: v.durationSec,
-  thumbnail: `https://i.ytimg.com/vi/${v.videoId}/mqdefault.jpg`,
-});
 
 /** One verse: its translation and every lecture on it, best first. */
 export default function VerseScreen() {
@@ -100,7 +92,8 @@ export default function VerseScreen() {
           <Ionicons name="mic-off-outline" size={28} color={C.textFaint} />
           <Text style={styles.noneTitle}>No archive lecture on this verse yet</Text>
           <Text style={styles.noneText}>
-            Videos found on YouTube are below. Talks on the whole chapter are on the chapter page.
+            Videos found on YouTube are below. Talks on the whole {isSingleChapter(book) ? 'book' : 'chapter'} are
+            on the {isSingleChapter(book) ? 'book' : 'chapter'} page.
           </Text>
         </View>
       )}
@@ -147,7 +140,7 @@ export default function VerseScreen() {
         <>
           <SectionTitle text="Videos by your speakers" count={lectures.video.length} icon="logo-youtube" />
           {lectures.video.map((v) => (
-            <VideoCard key={v.videoId} video={toVideo(v)} />
+            <VideoCard key={v.videoId} video={verseVideoResult(v)} />
           ))}
         </>
       )}
@@ -166,76 +159,6 @@ export default function VerseScreen() {
       )}
     </ScrollView>
   );
-}
-
-/**
- * Live YouTube search for the verse ("SB 1.2.6 lecture"), keeping only videos
- * whose title names this very verse — the bare query returns neighbouring
- * verses and unrelated talks too. Videos already listed from the index are
- * dropped.
- */
-function useLiveVerseVideos(
-  book: BookKey,
-  part: string,
-  n: number,
-  entry: string,
-  label: string,
-  known: VerseVideo[],
-  speaker: string,
-) {
-  const [videos, setVideos] = useState<VideoResult[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState(false);
-  const [nonce, setNonce] = useState(0);
-
-  useEffect(() => {
-    const ctrl = new AbortController();
-    const timeout = setTimeout(() => ctrl.abort(), 20000);
-    let stale = false;
-    setLoading(true);
-    setError(false);
-    const lo = entryStart(entry);
-    const hi = entryEnd(entry);
-    const knownIds = new Set(known.map((v) => v.videoId));
-    const who = speaker !== 'all' && speaker in MAHARAJAS ? `${MAHARAJAS[speaker as keyof typeof MAHARAJAS].short} ` : '';
-    const query = `${who}${label.replace('-', ' ')} lecture`;
-
-    search(query, ctrl.signal)
-      .then((page) => {
-        if (stale) return;
-        const hits = page.videos.filter((v) => {
-          if (knownIds.has(v.videoId)) return false;
-          if (v.durationSec != null && v.durationSec < 300) return false;
-          return parseVerseRefs(v.title).some(
-            (r) =>
-              r.book === book &&
-              (book === 'BG' || r.part === part) &&
-              r.chapter === n &&
-              r.from != null &&
-              r.from <= hi &&
-              (r.to ?? r.from) >= lo,
-          );
-        });
-        setVideos(hits);
-      })
-      .catch(() => {
-        if (!stale) setError(true);
-      })
-      .finally(() => {
-        clearTimeout(timeout);
-        if (!stale) setLoading(false);
-      });
-
-    return () => {
-      stale = true;
-      clearTimeout(timeout);
-      ctrl.abort();
-    };
-    // `known` is derived from the same verse; keying on the verse is enough.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [book, part, n, entry, label, speaker, nonce]);
-
-  return { videos, loading, error, retry: () => setNonce((x) => x + 1) };
 }
 
 function SectionTitle({ text, count, icon }: { text: string; count?: number; icon: string }) {

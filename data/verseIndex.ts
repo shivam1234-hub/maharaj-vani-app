@@ -3,7 +3,7 @@
  * translations.
  *
  * Everything is required lazily. The index is sharded — BG, each SB canto,
- * CC (data/verse-index/*.json, ≤2 MB each) — and a shard is parsed the first
+ * CC, NOI, NOD, BS, ISO (data/verse-index/*.json, ≤2 MB each) — and a shard is parsed the first
  * time a chapter in it is opened, so reading the Gita never pays for the
  * ~10 MB Bhagavatam index. Per-chapter lookups are built once and cached.
  *
@@ -15,17 +15,23 @@ import type { MaharajKey, Recording, SpeakerKey } from './types';
 import { chapterKey, entryEnd, entryStart, formatRef, type BookKey, type VerseRef } from '../utils/verseRef';
 import { archiveId, archiveTitle } from '../utils/archiveId';
 import { honoured } from './maharajas';
+// Type-only imports flow the other way (songIndex → verseIndex), so no cycle at load time.
+import { SONG_SHARD, getSongGuestById, songGuestRecording } from './songIndex';
 
 // ------------------------------------------------------------------ table
 
 export interface ChapterInfo {
   n: number;
   title: string;
-  /** Vedabase verse entries in order: "1", "2", …, "16-18". */
+  /**
+   * Vedabase verse entries in order: "1", "2", …, "16-18". "0" is the
+   * Isopanisad Invocation. Empty for a prose chapter (The Nectar of Devotion),
+   * whose lectures are on the chapter as a whole.
+   */
   verses: string[];
 }
 export interface PartInfo {
-  /** '' for BG, canto number for SB, lila key for CC. */
+  /** '' for BG and the smaller books, canto number for SB, lila key for CC. */
   key: string;
   name: string;
   chapters: ChapterInfo[];
@@ -89,7 +95,7 @@ export function adjacentVerse(
   return { ...next, entry: dir === 1 ? nc.verses[0] : nc.verses[nc.verses.length - 1] };
 }
 
-/** "SB 10.4" / "BG 2" / "CC Madhya 8" — a chapter's short label. */
+/** "SB 10.4" / "BG 2" / "CC Madhya 8" / "NOD 16" — a chapter's short label. */
 export function chapterLabel(book: BookKey, part: string, n: number): string {
   return formatRef({ book, part, chapter: n, from: null, to: null });
 }
@@ -99,9 +105,27 @@ export function verseLabel(book: BookKey, part: string, n: number, entry: string
   return formatRef({ book, part, chapter: n, from: entryStart(entry), to: entryEnd(entry) });
 }
 
+/** A book with one chapter (NOI, ISO, BS) — its chapter level is skipped in the UI. */
+export function isSingleChapter(book: BookKey): boolean {
+  const b = getBook(book);
+  return !!b && b.parts.length === 1 && b.parts[0].chapters.length === 1;
+}
+
+/** A prose book followed chapter by chapter (The Nectar of Devotion). */
+export function isProse(book: BookKey): boolean {
+  return book === 'NOD';
+}
+
 /** The verse's page on vedabase.io, for reading the translation and purport. */
 export function vedabaseUrl(book: BookKey, part: string, n: number, entry?: string): string {
-  const base = `https://vedabase.io/en/library/${book.toLowerCase()}/${part ? `${part}/` : ''}${n}/`;
+  const root = `https://vedabase.io/en/library/${book.toLowerCase()}/`;
+  // NOI and ISO have no chapter level on Vedabase; NOD's chapter 0 is its Introduction.
+  if (book === 'NOI' || book === 'ISO') {
+    if (entry == null) return root;
+    return `${root}${entry === '0' ? 'invocation' : entry}/`;
+  }
+  if (book === 'NOD') return `${root}${n === 0 ? 'introduction' : n}/`;
+  const base = `${root}${part ? `${part}/` : ''}${n}/`;
   return entry ? `${base}${entry}/` : base;
 }
 
@@ -111,6 +135,11 @@ const TEXT_LOADERS: Record<BookKey, () => Record<string, string>> = {
   BG: () => require('./shastra/text-BG.json'),
   SB: () => require('./shastra/text-SB.json'),
   CC: () => require('./shastra/text-CC.json'),
+  NOI: () => require('./shastra/text-NOI.json'),
+  BS: () => require('./shastra/text-BS.json'),
+  ISO: () => require('./shastra/text-ISO.json'),
+  // Prose, chapter by chapter: no verse translations.
+  NOD: () => ({}),
 };
 const texts: Partial<Record<BookKey, Record<string, string>>> = {};
 
@@ -123,7 +152,7 @@ export function verseTranslation(book: BookKey, part: string, n: number, entry: 
       texts[book] = {};
     }
   }
-  const key = book === 'BG' ? `${n}.${entry}` : `${part}.${n}.${entry}`;
+  const key = part ? `${part}.${n}.${entry}` : `${n}.${entry}`;
   return texts[book]![key] ?? '';
 }
 
@@ -186,7 +215,7 @@ export interface ChapterLectures {
   video: VerseVideo[];
 }
 
-/** "bg", "sb1" … "sb12", "cc" — one per data/verse-index/*.json file. */
+/** "bg", "sb1" … "sb12", "cc", "noi", "nod", "bs", "iso" — one per data/verse-index/*.json file. */
 export type Shard = string;
 
 // Metro needs every require() path spelled out literally.
@@ -205,6 +234,10 @@ const SHARD_LOADERS: Record<Shard, () => RawIndex> = {
   sb11: () => require('./verse-index/SB-11.json'),
   sb12: () => require('./verse-index/SB-12.json'),
   cc: () => require('./verse-index/CC.json'),
+  noi: () => require('./verse-index/NOI.json'),
+  nod: () => require('./verse-index/NOD.json'),
+  bs: () => require('./verse-index/BS.json'),
+  iso: () => require('./verse-index/ISO.json'),
 };
 
 export function shardOf(book: BookKey, part: string): Shard {
@@ -359,10 +392,16 @@ const BOOK_CATEGORY: Record<BookKey, string> = {
   BG: 'Bhagavad-gita',
   SB: 'Srimad-Bhagavatam',
   CC: 'CC',
+  NOI: 'NOI',
+  NOD: 'NOD',
+  BS: 'BS',
+  ISO: 'ISO',
 };
 
 /** A playable Recording for an other-speaker row of a shard. */
 export function guestRecording(shard: Shard, rowIdx: number): Recording {
+  // Prayers & Songs lectures share the row shape but live in their own index.
+  if (shard === SONG_SHARD) return songGuestRecording(rowIdx);
   const r = index(shard);
   const row = r.audio[rowIdx];
   const dir = r.dirs[row[5]!];
@@ -416,7 +455,8 @@ const guestIdMaps = new Map<Shard, Map<string, number>>();
 export function getGuestRecordingById(id: string): Recording | undefined {
   const cached = guestCache.get(id);
   if (cached) return cached;
-  const shard = id.match(/^gst-(bg|cc|sb\d{1,2})-/)?.[1];
+  if (id.startsWith(`gst-${SONG_SHARD}-`)) return getSongGuestById(id);
+  const shard = id.match(/^gst-(bg|cc|noi|nod|bs|iso|sb\d{1,2})-/)?.[1];
   if (!shard || !SHARD_LOADERS[shard]) return undefined;
   let ids = guestIdMaps.get(shard);
   if (!ids) {

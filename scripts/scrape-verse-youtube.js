@@ -1,7 +1,8 @@
 #!/usr/bin/env node
 /**
- * Builds data/verse-youtube.json — YouTube lectures that name a BG / SB / CC
- * verse in their title, per catalogued speaker.
+ * Builds data/verse-youtube.json — YouTube lectures that name a BG / SB / CC /
+ * NOI / BS / ISO verse or a Nectar of Devotion chapter in their title, per
+ * catalogued speaker.
  *
  * Two sources, because neither alone is complete:
  *
@@ -109,6 +110,12 @@ const SEARCH_SUFFIXES = [
   'CC Adi',
   'CC Madhya',
   'CC Antya',
+  'Nectar of Instruction',
+  'Nectar of Devotion',
+  'Nectar of Devotion chapter',
+  'Brahma Samhita',
+  'Sri Isopanisad',
+  'Isopanishad mantra',
 ];
 
 // ---------------------------------------------------------------- youtube

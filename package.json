@@ -1,6 +1,6 @@
 {
   "name": "maharaj-vani",
-  "version": "1.9.2",
+  "version": "1.10.0",
   "description": "Vaishnava Vani — lectures of Radhanath Swami, Lokanath Swami, Bhakti Ashraya Vaishnava Swami, Gour Govinda Swami and five Prabhujis — verse by verse through BG, SB and CC, offline audio, search, YouTube",
   "main": "index.js",
   "scripts": {
@@ -23,7 +23,8 @@
     "verses:youtube": "node scripts/scrape-verse-youtube.js",
     "verses:others": "node scripts/build-verse-others.js",
     "verses:index": "node scripts/build-verse-index.js",
-    "verses": "npm run verses:others && npm run verses:index",
+    "verses:songs": "node scripts/build-song-index.js",
+    "verses": "npm run verses:others && npm run verses:index && npm run verses:songs",
     "stats": "node scripts/catalog-stats.js",
     "desktop": "cd desktop && npm run dev",
     "desktop:dist": "cd desktop && npm run dist"
