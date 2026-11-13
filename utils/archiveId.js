@@ -13,8 +13,8 @@
 const AUDIO_EXT = /\.(mp3|m4a|wma|ogg|wav|aac)$/i;
 
 /**
- * `shard` ("bg", "sb10", "cc") is the verse-index file the row lives in. It is
- * part of the id so a saved id resolves by loading that one shard, not all 14.
+ * `shard` ("bg", "sb10", "cc", "noi", "iso"…) is the verse-index file the row lives in. It is
+ * part of the id so a saved id resolves by loading that one shard, not all 18.
  */
 function archiveId(filePath, shard) {
   const slug = filePath

@@ -21,6 +21,7 @@
  *   node scripts/crawl-site.js
  *   node scripts/crawl-site.js --concurrency 10
  *   node scripts/crawl-site.js --fresh          # discard the cache first
+ *   node scripts/crawl-site.js --roots /01_-_Srila_Prabhupada/01_-_Lectures   # add a folder
  */
 
 const fs = require('fs');
@@ -39,7 +40,12 @@ const CONCURRENCY = Number(argOf('--concurrency', 8));
 const CACHE_DIR = path.join(__dirname, '.cache');
 const CACHE = path.join(CACHE_DIR, 'site-crawl.jsonl');
 
-const ROOTS = [
+/**
+ * `--roots /01_-_Srila_Prabhupada/01_-_Lectures` crawls other folders into the
+ * same cache — Srila Prabhupada's lectures hold his purports to the songs
+ * that the Prayers & Songs index (build-song-index.js) files.
+ */
+const ROOTS = argOf('--roots', null)?.split(',') ?? [
   '/02_-_ISKCON_Swamis',
   '/03_-_ISKCON_Prabhujis',
   '/04_-_ISKCON_Matajis',

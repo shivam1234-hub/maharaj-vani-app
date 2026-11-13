@@ -10,9 +10,9 @@
  * rely on returns nothing for a query as broad as "SB" and misses the many
  * naming styles, which left most of the Bhagavatam uncovered.
  *
- * Srila Prabhupada's own root is not in the crawl (it is the Prabhupada Vani
- * app's subject); his verse lectures are carried over from the previous
- * raw file, which reached them via the site search.
+ * Srila Prabhupada's lectures are in the crawl when it was run with
+ * `--roots /01_-_Srila_Prabhupada/01_-_Lectures`; any older ones reached via
+ * the site search are carried over from the previous raw file.
  *
  * Each row: { path, speaker, tier, title, size }
  *   tier 1 = another Maharaja (ISKCON Swami)       — "any other Maharaja"
@@ -25,54 +25,11 @@
 const fs = require('fs');
 const path = require('path');
 const { parseVerseRefs } = require('../utils/verseRef');
+const { speakerOf } = require('./lib/speaker');
 
 const CACHE = path.join(__dirname, '.cache', 'site-crawl.jsonl');
 // Build input only (36 MB) — kept out of data/ so it is never bundled or committed.
 const OUT = path.join(__dirname, '.cache', 'verse-others-raw.json');
-const AUDIO_EXT = /\.(mp3|m4a|wma|ogg|wav|aac)$/i;
-
-const tidy = (s) => s.replace(/_/g, ' ').replace(/\s*\(.*?\)\s*/g, ' ').replace(/\s+/g, ' ').trim();
-
-/** "Kesi Daman Pr" -> "Kesi Daman Prabhu", "Bhakti Vikas Sw" -> "Bhakti Vikas Swami". */
-function honorific(name, title) {
-  if (/^(swami|sw|goswami|maharaja?)$/i.test(title)) return `${name} ${/goswami/i.test(title) ? 'Goswami' : 'Swami'}`;
-  if (/^(mataji|mtj|devi\s*dasi)$/i.test(title)) return `${name} Mataji`;
-  return `${name} Prabhu`;
-}
-
-/** Words that sit just before an honorific in a title but are not part of a name. */
-const NOT_NAME = /^(by|hg|hh|his|her|grace|holiness|sri|srila|class|lecture|day|part|and|with|the|of)$/i;
-
-/**
- * Who gave the class, from where the file sits or what it is named.
- * Returns null when the speaker can't be told — such files are skipped rather
- * than guessed at.
- */
-function speakerOf(p) {
-  let m = p.match(/^\/02_-_ISKCON_Swamis\/[^/]+\/His_Holiness_([^/]+)\//);
-  if (m) return { speaker: tidy(m[1]), tier: 1 };
-  m = p.match(/^\/03_-_ISKCON_Prabhujis\/[^/]+\/His_Grace_([^/]+)\//) || p.match(/\/His_Grace_([^/]+)\//);
-  if (m) return { speaker: tidy(m[1]).replace(/\s+Prabhu$/i, '') + ' Prabhu', tier: 3 };
-  m = p.match(/^\/04_-_ISKCON_Matajis\/(?:[^/]+\/)?Her_Grace_([^/]+)\//) || p.match(/\/Her_Grace_([^/]+)\//);
-  if (m) return { speaker: tidy(m[1]).replace(/\s+Mataji$/i, '') + ' Mataji', tier: 3 };
-  if (/^\/0[34]_-_ISKCON_/.test(p)) return null;
-
-  // Shared collections name the speaker in the file:
-  //   "2017-12-14_BG_18-62_-_Kesi_Daman_Pr_ISKCON_Vrindavan"
-  //   "… - Prahladananda_Swami_ISKCON_Slovenia", "Bhakti_Vikas_Sw_BG_08-05_…"
-  const file = tidy(p.slice(p.lastIndexOf('/') + 1).replace(AUDIO_EXT, ''));
-  const re = /((?:[A-Z][a-z]+\s+){0,3}[A-Z][a-z]+)\s+(Swami|Goswami|Maharaja?|Sw|Prabhuji|Prabhu|Pr|Mataji|Mtj|Devi\s+Dasi)\b/g;
-  let best = null;
-  for (const hit of file.matchAll(re)) {
-    const words = hit[1].split(' ').filter((w) => !NOT_NAME.test(w));
-    if (!words.length) continue;
-    best = { name: words.join(' '), title: hit[2] };
-  }
-  if (!best) return null;
-  if (/^(Srila|Prabhupada)/i.test(best.name)) return null;
-  const tier = /^(swami|goswami|maharaja?|sw)$/i.test(best.title) ? 1 : 3;
-  return { speaker: honorific(best.name, best.title), tier };
-}
 
 (async () => {
   const rows = [];

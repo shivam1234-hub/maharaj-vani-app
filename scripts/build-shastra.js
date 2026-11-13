@@ -7,6 +7,12 @@
  *   data/shastra/text-BG.json     { "2.47": "You have a right to perform…" }
  *   data/shastra/text-SB.json     { "1.2.6": "…" }
  *   data/shastra/text-CC.json     { "adi.1.1": "…" }
+ *   data/shastra/text-NOI.json    { "1.5": "…" }        (one chapter, n = 1)
+ *   data/shastra/text-ISO.json    { "1.0": "…" }        ("0" is the Invocation)
+ *   data/shastra/text-BS.json     { "5.29": "…" }       (the book is chapter 5)
+ *
+ * The Nectar of Devotion is prose, followed chapter by chapter; it has no
+ * verse translations.
  *
  * Source: one vedabase.io chapter page per chapter (≈415 requests). A chapter
  * page lists every verse with its translation, and shows joined verses as one
@@ -17,6 +23,7 @@
  *
  *   node scripts/build-shastra.js
  *   node scripts/build-shastra.js --only BG
+ *   node scripts/build-shastra.js --only NOI,ISO,BS
  */
 
 const fs = require('fs');
@@ -26,8 +33,15 @@ const OUT = path.join(__dirname, '..', 'data', 'shastra');
 const UA = 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 Chrome/126.0 Safari/537.36';
 const ONLY = (() => {
   const i = process.argv.indexOf('--only');
-  return i > -1 ? process.argv[i + 1] : null;
+  return i > -1 ? new Set(process.argv[i + 1].toUpperCase().split(',')) : null;
 })();
+
+/** The smaller books: one chapter page each, at this chapter number. */
+const SINGLE = {
+  NOI: { ch: 1, base: '/en/library/noi/' },
+  ISO: { ch: 1, base: '/en/library/iso/' },
+  BS: { ch: 5, base: '/en/library/bs/5/' },
+};
 
 const SB_CANTOS = [
   [1, 'Creation', 19],
@@ -122,7 +136,24 @@ async function pool(items, n, fn) {
   );
 }
 
+/** NOI / ISO / BS: one page lists every verse with its translation. */
+async function buildSingle(key) {
+  const { ch, base } = SINGLE[key];
+  const html = await get(`https://vedabase.io${base}`);
+  const parsed = parseChapter(html, base);
+  if (!parsed.verses.length) throw new Error(`no verses parsed at ${base}`);
+  const text = {};
+  for (const v of parsed.verses) text[`${ch}.${v}`] = parsed.text[v] ?? '';
+  if (key === 'ISO') {
+    // The Invocation is linked by name, not number; it is verse "0".
+    const m = html.match(/<a href="\/en\/library\/iso\/invocation\/"[^>]*>[^<]*(?:<!-- -->)?:?<\/a>\s*<span[^>]*>([\s\S]*?)<\/span>/);
+    if (m) text[`${ch}.0`] = decode(m[1]);
+  }
+  return { text };
+}
+
 async function buildBook(key) {
+  if (SINGLE[key]) return buildSingle(key);
   const jobs = [];
   if (key === 'BG') {
     for (let c = 1; c <= 18; c++) jobs.push({ part: null, ch: c, base: `/en/library/bg/${c}/` });
@@ -186,8 +217,8 @@ async function buildBook(key) {
 (async () => {
   fs.mkdirSync(OUT, { recursive: true });
 
-  for (const key of ['BG', 'SB', 'CC']) {
-    if (ONLY && ONLY !== key) continue;
+  for (const key of ['BG', 'SB', 'CC', 'NOI', 'ISO', 'BS']) {
+    if (ONLY && !ONLY.has(key)) continue;
     console.log(`\n${key}`);
     const { text } = await buildBook(key);
     fs.writeFileSync(path.join(OUT, `text-${key}.json`), JSON.stringify(text));

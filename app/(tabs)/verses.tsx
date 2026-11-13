@@ -6,11 +6,14 @@ import { router } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import VerseSpeakerChips from '../../components/VerseSpeakerChips';
-import { getBooks, getChapter, chapterLabel, verseLabel, type BookInfo } from '../../data/verseIndex';
+import {
+  getBooks, getChapter, chapterLabel, isProse, isSingleChapter, verseLabel, type BookInfo,
+} from '../../data/verseIndex';
 import { useLastPlace } from '../../hooks/useVerses';
 import { entryEnd, entryStart, parseVerseRefs, type BookKey } from '../../utils/verseRef';
 import { C, R, alpha } from '../../constants/theme';
-import { BOOK_META, chapterHref, verseHref } from '../../utils/shastraNav';
+import { BOOK_META, SONGS_COLOR, chapterHref, verseHref } from '../../utils/shastraNav';
+import { SONGS } from '../../utils/songs';
 
 /**
  * "SB 1.2.6" typed into the jump box → the verse entry holding verse 6 of
@@ -73,7 +76,7 @@ export default function VersesScreen() {
             if (jumpError) setJumpError(false);
           }}
           onSubmitEditing={go}
-          placeholder="Go to verse — SB 1.2.6, BG 2.47"
+          placeholder="Go to verse — SB 1.2.6, BG 2.47, NOI 5"
           placeholderTextColor={C.textFaint}
           style={styles.jumpInput}
           autoCapitalize="characters"
@@ -84,7 +87,9 @@ export default function VersesScreen() {
           <Ionicons name="arrow-forward" size={17} color="#fff" />
         </Pressable>
       </View>
-      {jumpError && <Text style={styles.jumpErr}>Not a verse I can find — try “SB 1.2.6”.</Text>}
+      {jumpError && (
+        <Text style={styles.jumpErr}>Not a verse I can find — try “SB 1.2.6”, “Iso 7” or “NOD 12”.</Text>
+      )}
 
       {/* ---------------- continue ---------------- */}
       {last && getChapter(last.book, last.part, last.n) && (
@@ -123,6 +128,29 @@ export default function VersesScreen() {
         <BookCard key={b.key} book={b} />
       ))}
 
+      <Text style={styles.section}>Prayers & Songs</Text>
+      <Pressable
+        onPress={() => router.push('/songs' as any)}
+        style={({ pressed }) => [
+          styles.book,
+          { borderColor: SONGS_COLOR + alpha(0.35), backgroundColor: SONGS_COLOR + alpha(0.08) },
+          pressed && styles.pressed,
+        ]}
+      >
+        <View style={[styles.bookIcon, { backgroundColor: SONGS_COLOR + alpha(0.18) }]}>
+          <Ionicons name="musical-notes" size={24} color={SONGS_COLOR} />
+        </View>
+        <View style={{ flex: 1 }}>
+          <Text style={styles.bookName}>Prayers & Vaisnava Songs</Text>
+          <Text style={styles.bookBlurb}>
+            Explanations of Gurvastakam, Siksastakam, Mangalacarana, the songs of Bhaktivinoda and
+            Narottama dasa Thakura, Kunti’s prayers and more
+          </Text>
+          <Text style={[styles.bookStats, { color: SONGS_COLOR }]}>{SONGS.length} prayers & songs</Text>
+        </View>
+        <Ionicons name="chevron-forward" size={20} color={C.textFaint} />
+      </Pressable>
+
       <Text style={styles.footer}>
         Verse text: Bhaktivedanta Book Trust (vedabase.io). Audio: audio.iskcondesiretree.com.
       </Text>
@@ -136,10 +164,19 @@ function BookCard({ book }: { book: BookInfo }) {
   const verses = book.parts.reduce((a, p) => a + p.chapters.reduce((x, c) => x + c.verses.length, 0), 0);
   const parts =
     book.key === 'SB' ? `${book.parts.length} cantos · ` : book.key === 'CC' ? `${book.parts.length} lilas · ` : '';
+  const single = isSingleChapter(book.key);
+  const stats = isProse(book.key)
+    ? `${chapters} chapters`
+    : single
+      ? `${verses.toLocaleString()} verses`
+      : `${parts}${chapters} chapters · ${verses.toLocaleString()} verses`;
+  // A one-chapter book (NOI, Iso, Bs) opens straight onto its verses.
+  const only = single ? book.parts[0] : null;
+  const href = only ? chapterHref(book.key, only.key, only.chapters[0].n) : `/shastra/${book.key}`;
 
   return (
     <Pressable
-      onPress={() => router.push(`/shastra/${book.key}` as any)}
+      onPress={() => router.push(href as any)}
       style={({ pressed }) => [
         styles.book,
         { borderColor: meta.color + alpha(0.35), backgroundColor: meta.color + alpha(0.08) },
@@ -152,10 +189,7 @@ function BookCard({ book }: { book: BookInfo }) {
       <View style={{ flex: 1 }}>
         <Text style={styles.bookName}>{book.name}</Text>
         <Text style={styles.bookBlurb}>{meta.blurb}</Text>
-        <Text style={[styles.bookStats, { color: meta.color }]}>
-          {parts}
-          {chapters} chapters · {verses.toLocaleString()} verses
-        </Text>
+        <Text style={[styles.bookStats, { color: meta.color }]}>{stats}</Text>
       </View>
       <Ionicons name="chevron-forward" size={20} color={C.textFaint} />
     </Pressable>

@@ -2,7 +2,7 @@
   "expo": {
     "name": "Vaishnava Vani",
     "slug": "maharaj-vani",
-    "version": "1.9.2",
+    "version": "1.10.0",
     "orientation": "portrait",
     "icon": "./assets/icon.png",
     "userInterfaceStyle": "light",

@@ -2,8 +2,8 @@ import React, { useEffect, useMemo, useState } from 'react';
 import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { router, useLocalSearchParams, useNavigation } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
-import { getBook, type PartInfo } from '../../data/verseIndex';
-import { verseCounts } from '../../hooks/useVerses';
+import { getBook, isProse, type PartInfo } from '../../data/verseIndex';
+import { chapterTalks, useVerseSpeaker, verseCounts } from '../../hooks/useVerses';
 import type { BookKey } from '../../utils/verseRef';
 import { BOOK_META, chapterHref } from '../../utils/shastraNav';
 import { C, R, alpha } from '../../constants/theme';
@@ -83,35 +83,51 @@ export default function BookScreen() {
 }
 
 function ChapterList({ book, part, color }: { book: BookKey; part: PartInfo; color: string }) {
-  // Coverage per chapter — loads this part's index shard once.
+  const prose = isProse(book);
+  const [speaker] = useVerseSpeaker();
+  // Coverage per chapter — loads this part's index shard once. A prose
+  // chapter (Nectar of Devotion) counts its lectures; a verse chapter counts
+  // the verses that have at least one.
   const coverage = useMemo(
     () =>
       part.chapters.map((c) => {
+        if (prose) {
+          const t = chapterTalks(book, part.key, c.n, speaker);
+          const all = [...t.audio, ...t.video];
+          return { covered: all.length, mine: all.filter((l) => l.tier === 0).length };
+        }
         const counts = verseCounts(book, part.key, c.n, c.verses);
         return {
           covered: counts.filter((x) => x.audio + x.video > 0).length,
           mine: counts.filter((x) => x.mine > 0).length,
         };
       }),
-    [book, part],
+    [book, part, prose, speaker],
   );
+  // Prose: the bar is relative to the best-covered chapter.
+  const most = Math.max(1, ...coverage.map((c) => c.covered));
 
   return (
     <View style={styles.list}>
       {part.chapters.map((c, i) => {
         const cov = coverage[i];
-        const frac = c.verses.length ? cov.covered / c.verses.length : 0;
+        const frac = prose ? cov.covered / most : c.verses.length ? cov.covered / c.verses.length : 0;
         return (
           <Pressable
             key={c.n}
             onPress={() => router.push(chapterHref(book, part.key, c.n) as any)}
             style={({ pressed }) => [styles.chRow, i > 0 && styles.divider, pressed && styles.pressed]}
           >
-            <Text style={[styles.chNum, { color }]}>{c.n}</Text>
+            {/* NOD's Introduction is chapter 0. */}
+            <Text style={[styles.chNum, { color }]}>{c.n === 0 ? 'i' : c.n}</Text>
             <View style={{ flex: 1 }}>
               <Text style={styles.chTitle} numberOfLines={2}>{c.title}</Text>
               <Text style={styles.chMeta}>
-                {c.verses.length} verses · lectures on {cov.covered}
+                {prose
+                  ? cov.covered
+                    ? `${cov.covered} lecture${cov.covered === 1 ? '' : 's'}`
+                    : 'no lecture yet'
+                  : `${c.verses.length} verses · lectures on ${cov.covered}`}
                 {cov.mine ? ` · ${cov.mine} by your speakers` : ''}
               </Text>
               <View style={styles.track}>
